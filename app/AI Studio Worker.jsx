@@ -36,8 +36,8 @@ let RUNTIME = {
     gemini_base: 'https://generativelanguage.googleapis.com/v1beta/models',
     imgbb_upload_url: 'https://api.imgbb.com/1/upload',
     stale_ms: 10 * 60 * 1000,     // a stuck task older than this can be picked again
-    heartbeat_ms: 20000,          // "I am alive" every 20 s (and reads the paused flag)
-    fallback_ms: 60000,           // safety-net refresh every 60 s (realtime does the rest)
+    heartbeat_ms: 30000,          // "I am alive" every 30 s (and reads the paused flag)
+    fallback_ms: 10000,           // safety-net check every 10 s (realtime does the rest)
     image_max_side: 2048,
     image_quality: 0.85,
     model_caps: {}                // filled from ai_studio_models (kind, label, aspects, sizes)
@@ -50,8 +50,8 @@ function applyRuntime(d) {
         gemini_base: d.gemini_base || RUNTIME.gemini_base,
         imgbb_upload_url: d.imgbb_upload_url || RUNTIME.imgbb_upload_url,
         stale_ms: (d.stale_min ?? 10) * 60 * 1000,
-        heartbeat_ms: (d.heartbeat_sec ?? 20) * 1000,
-        fallback_ms: (d.fallback_sec ?? 60) * 1000,
+        heartbeat_ms: (d.heartbeat_sec ?? 30) * 1000,
+        fallback_ms: (d.fallback_sec ?? 10) * 1000,
         image_max_side: d.image_max_side ?? RUNTIME.image_max_side,
         image_quality: d.image_quality ?? RUNTIME.image_quality,
         model_caps: d.model_caps || RUNTIME.model_caps

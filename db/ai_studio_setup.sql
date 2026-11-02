@@ -2908,7 +2908,7 @@ select id, status, duration_ms, process_ms, finished_at
 -- Safe to run again.
 -- ============================================================
 
-update public.ai_studio_settings set fallback_sec = 120 where id = 1;
+update public.ai_studio_settings set fallback_sec = 10 where id = 1;
 
 -- Check
 select fallback_sec, heartbeat_sec from public.ai_studio_settings where id = 1;
