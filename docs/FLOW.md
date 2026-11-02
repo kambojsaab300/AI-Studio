@@ -41,8 +41,9 @@ uploads the photo, and saves the result. The customer sees the result.
 
 ```mermaid
 flowchart TD
-    A[Open customer app] --> B[Load feature list from DB]
-    B --> C[Choose a feature]
+    A[Open customer app] --> B[Load app list and feature list from DB]
+    B --> B1[Choose app: WearGen, PPP, ...]
+    B1 --> C[Choose a feature of that app]
     C --> D[Upload photos or paste links]
     D --> E{Brush feature?}
     E -- yes --> F[Paint the area on the photo]
@@ -63,12 +64,15 @@ flowchart TD
 **What the DB checks when the customer presses send:**
 1. Customer is logged in.
 2. Maintenance mode is off.
-3. The feature is enabled and visible to customers.
+3. The app is enabled, and the feature is enabled, visible to customers, and listed for that app.
 4. The model is enabled.
 5. Daily task limit is not reached.
 6. Photos match the feature (how many, which slots, family 2 to 6, per-photo 1 to 10).
 7. Prompt is filled when the feature needs one.
-8. No identical task is already pending or running.
+8. Image size (0.5K, 1K, 2K, 4K) is one the model supports. Aspect ratio is one the model lists.
+9. No identical task is already pending or running.
+
+The task is saved with its `app_id`, so every record shows which app it came from.
 
 ---
 
@@ -78,20 +82,26 @@ flowchart TD
 flowchart TD
     A[Log in as admin] --> B{Which screen?}
     B --> T[Task banao: create a task]
-    B --> W[Workers: live list, pause, drain, limit, priority]
+    B --> W[Workers: Active / Offline / Sab tabs, pause, resume, drain, limit]
     W --> WC[Clean-up: stuck tasks back to pending, failed tasks deleted, per worker or all]
-    B --> TL[Tools: tools, features, worker jobs, family roles]
-    B --> F[Features: list of everything]
+    B --> TL[Tools: tools, worker jobs, family roles]
+    B --> F[Features: app checkboxes per feature, names, slots]
     B --> P[Prompts: edit text per feature]
-    B --> S[Settings: limits, budget, alerts, face check, image size]
-    T --> T1[Pick feature, add photos and prompt]
+    B --> S[Settings: worker settings, budget, alerts, fallback and heartbeat seconds]
+    B --> M[Models: on or off, size and aspect checkboxes per image model]
+    T --> T1[Pick app and feature, add photos and prompt]
     T1 --> T2[Problems shown in red? fix them]
     T2 --> T3[Send: task is pending]
-    TL --> TL1[Turn feature on or off]
+    T3 --> T4[Task appears at the bottom of the live list]
+    T4 --> T5[Status and time update live, no reload]
+    T5 --> T6[Dekho: full detail popup]
+    F --> F1[Tick WearGen, PPP or both for each feature]
+    TL --> TL1[Turn tool on or off]
     TL --> TL2[Set which tool a feature uses]
     TL --> TL3[Set which features each worker runs]
     TL --> TL4[Add or switch off family roles]
     S --> S1[Save: workers read new values soon]
+    M --> M1[Tick sizes and aspects the model supports]
     P --> P1[Save: prompt version]
 ```
 
@@ -109,10 +119,10 @@ flowchart TD
 flowchart TD
     A[Open worker app, enter Gemini key] --> B[Register worker id]
     B --> C[Load config, task types, prompts, roles, models]
-    C --> D[Heartbeat (time from settings, default 20 s): I am alive]
+    C --> D[Heartbeat (heartbeat_sec from Settings, default 30 s): I am alive]
     D --> E{Paused or drained or no budget?}
     E -- yes --> D
-    E -- no --> F[Ask DB for pending tasks for my tools and types]
+    E -- no --> F[Ask DB for pending tasks: on a new task (realtime INSERT) or every fallback_sec (default 120 s)]
     F --> G{Any task?}
     G -- no --> D
     G -- yes --> H[Claim one task: DB gives it only to me]
@@ -161,6 +171,19 @@ flowchart TD
 - A worker can only take tasks of its own tools and task types (checked in the DB).
 - One task is given to one worker only (claim).
 - A worker stops taking new tasks when paused, drained, out of budget, or when the model list is not loaded yet.
+- A worker takes new work only while it has a free slot. Its slot count is `task_limit` (Workers screen), or the global "Ek worker mein ek saath tasks" value if the box is empty.
+
+**Worker screen (what the operator sees):**
+- **Pause karo (naya task mat lo)** button: the worker pauses itself. It records the reason as "Worker ne khud pause kiya (screen se)". Only the admin can resume it (the DB guard allows only the admin to change `paused`).
+- Banner while paused: says it is paused, and that Resume is done from the admin Workers screen. The banner does not say who paused it.
+- The screen log is cleared every 10 minutes. This clears only the screen, not the database.
+- A new `task_limit` from the admin is read at once (no restart needed).
+- The "Is worker ke tasks" table has tabs (Pending, Processing, Completed, Failed) and 10 rows per page. Rows load only on a tab or page click, never on a timer.
+
+**Calls the worker makes (to keep bandwidth low):**
+- Heartbeat: every `heartbeat_sec` (default 30 s).
+- Pending check: on each new task (realtime INSERT, 3 s debounce), plus one check every `fallback_sec` (default 120 s) as a safety net.
+- The worker's own status updates (processing, done) do not trigger a pending check.
 
 ---
 
@@ -174,7 +197,20 @@ flowchart TD
     B --> C[Trigger: check per-photo count 1-10]
     C --> D[Trigger: check family snapshot, save role keys]
     D --> E[Trigger: set tool from mapping, refuse if off]
-    E --> F[Row saved as pending]
+    E --> F[Row saved as pending, with app_id]
+```
+
+The app check runs when a task is moved to another app (update of `app_id`). `customer_create_task` checks the app and its feature before the insert, then sets the `app_id`.
+
+### 6.1b When a task finishes (time is stored)
+
+```mermaid
+flowchart TD
+    A[Task status changes] --> B{New status done or failed?}
+    B -- yes --> C[Save finished_at, duration_ms from queue, process_ms from pick-up]
+    B -- no --> D{Back to pending or processing?}
+    D -- yes --> E[Clear finished_at, duration_ms, process_ms]
+    D -- no --> F[Nothing]
 ```
 
 ### 6.2 When a worker takes a task
@@ -190,11 +226,15 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[Task data from app] --> B[Load catalog row for this task type]
+    A[Task data from app] --> A0{App on, and feature listed for this app?}
+    A0 -- no --> X0[Refused]
+    A0 -- yes --> B[Load catalog row for this task type]
     B --> C{Type enabled?}
     C -- no --> X1[Refused]
     C -- yes --> D[Model fits output: image or text?]
-    D --> E{Prompt needed and given?}
+    D --> D1{Image size and aspect allowed by the model? 0.5K, 1K, 2K, 4K}
+    D1 -- no --> X6[Refused]
+    D1 -- yes --> E{Prompt needed and given?}
     E -- no --> X2[Refused]
     E -- yes --> F{Required photo slots filled?}
     F -- no --> X3[Refused]
@@ -202,7 +242,7 @@ flowchart TD
     G -- no --> X4[Refused]
     G -- yes --> H{Same task already pending?}
     H -- yes --> X5[Refused]
-    H -- no --> I[Saved]
+    H -- no --> I[Saved with app_id]
 ```
 
 ---
@@ -214,7 +254,8 @@ flowchart TD
     A[New idea] --> B{Can existing building blocks do it?}
     B -- yes --> C[Add catalog row + tool mapping + prompt row]
     C --> D[Enable in admin Tools screen]
-    D --> E[Give it to workers: Sab kaam or pick]
+    D --> D1[Tick the apps (WearGen, PPP) that should show it]
+    D1 --> E[Give it to workers: Sab kaam or pick]
     E --> F[Test: customer sends, worker runs]
     B -- no --> G{What is missing?}
     G -- new flag on existing processing --> H[Add flag in SQL + small code in worker, deploy worker once]
@@ -272,19 +313,22 @@ flowchart TD
 ```mermaid
 flowchart LR
     A[Admin Settings or Tools screen] --> B[(Database row)]
-    B --> C[Worker reads config on connect and every 60 s]
+    B --> C[Worker reads config on connect and when its own row, models, prompts or features change]
     B --> D[Customer reads features on load]
     B --> E[DB rules apply immediately to new tasks]
 ```
 
 | Change | Where | Takes effect |
 |---|---|---|
-| Feature on or off | Tools screen | New tasks, next customer page load |
+| Feature on or off | Features screen | New tasks, next customer page load |
+| Feature for an app (WearGen, PPP) | Features screen, app checkboxes | Next customer page load |
 | Prompt text | Prompts | New tasks use the new version |
 | Family role | Tools screen | Next family task |
 | Worker jobs | Tools screen | Next time the worker asks for tasks |
-| Face threshold, image size | Settings | Next worker config refresh |
-| Model on or off | Models | Next worker config refresh |
+| Face threshold, image size, fallback and heartbeat seconds | Settings | Next worker config load |
+| Model on or off, sizes and aspects | Models | Next worker config load, task form and customer app at once |
+| Worker task limit | Workers screen (Limit box) | At once, the worker reads it on the change |
+| Worker pause or resume | Workers screen (admin only) | At once |
 
 ---
 
@@ -317,4 +361,10 @@ flowchart TD
 | Claim | A worker taking one task. Only one worker can claim a task. |
 | Snapshot | A copy of rules or roles saved with the task |
 | Per-photo | One result for each photo, same prompt |
-| Heartbeat | "I am alive" signal from a worker, every 20 s |
+| App | A product that uses AI Studio (WearGen, PPP). Each task records its `app_id`. |
+| App-feature link | Which features an app shows (`ai_studio_app_tasks`) |
+| Active worker | A worker seen within two heartbeats (at least 60 s) |
+| Heartbeat | "I am alive" signal from a worker, every `heartbeat_sec` (default 30 s) |
+| Fallback | Safety check for pending tasks, every `fallback_sec` (default 120 s) |
+| Live list | The task list at the bottom of the admin "Task banao" screen; it updates by realtime |
+| Duration | Seconds from queue to finish (`duration_ms`); `process_ms` is the worker's share |

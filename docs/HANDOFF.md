@@ -53,7 +53,12 @@ Other files in `E:\Mohit\photo tool\` (old experiments, not part of AI Studio): 
 | `ai_studio_catalog.sql` | **Task catalog** (all task types), upload rules, per-photo, prompt FK |
 | `ai_studio_family_roles.sql` | Family roles table and task snapshot trigger |
 | `ai_studio_engine.sql` | Model capabilities, engine settings, `get_worker_config` |
-| `ai_studio_v2.sql` | Model list RPC, heartbeat and fallback settings, clean-up functions, latest `get_worker_config` (run last) |
+| `ai_studio_v2.sql` | Model list RPC, heartbeat and fallback settings, clean-up functions, latest `get_worker_config` |
+| `ai_studio_apps.sql` | Multi-app: apps (WearGen, PPP), feature per app, `app_id` on tasks, app-aware customer create |
+| `ai_studio_image_sizes.sql` | 1K, 2K, 4K for the 3.1 Flash image model |
+| `ai_studio_size_05k.sql` | Size 0.5K allowed in the upload checks |
+| `ai_studio_task_time.sql` | Task time columns and trigger (`finished_at`, `duration_ms`, `process_ms`) |
+| `ai_studio_fallback.sql` | `fallback_sec` set to 120 (run last) |
 | `docs/README.md` | Documentation index |
 | `docs/CLIENT_VIEW.md` | Client-friendly feature list |
 | `docs/DEVELOPER_VIEW.md` | Developer guide (architecture, tables, how to add features) |
@@ -118,7 +123,7 @@ If a key was ever pasted in a chat, rotate it.
 ## 6. Known issues and limits
 
 - Nothing has been run live. Expect small SQL or runtime errors on first run. Fix and note them here.
-- Worker app must stay open in a browser tab. Heartbeat is 20 s, fallback refresh 60 s (these two are still in code).
+- Worker app must stay open in a browser tab. Heartbeat and fallback are in Settings now (`heartbeat_sec` default 30 s, `fallback_sec` default 120 s). The worker also wakes on realtime INSERT of a new task.
 - Pending list only looks at the first 200 pending tasks, then filters by the worker's tools and types.
 - Fair share is across all tools together (not per tool).
 - Per-photo tasks: one Gemini call per photo (uses budget fast).

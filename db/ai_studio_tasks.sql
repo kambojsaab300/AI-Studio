@@ -213,7 +213,7 @@ create or replace function public.ai_studio_text_models() returns text[] languag
 $$;
 
 create or replace function public.ai_studio_image_models() returns text[] language sql immutable as $$
-  select array['gemini-3.1-flash-image-preview', 'gemini-3-pro-image-preview', 'gemini-2.5-flash-image-preview'];
+  select array['gemini-3.1-flash-image-preview', 'gemini-2.5-flash-image-preview'];
 $$;
 
 create or replace function public.upload_ai_studio_task(p_payload jsonb)

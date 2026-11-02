@@ -1742,3 +1742,443 @@ Ye sab ab add ho gaya hai. Ek baat pehle: ab SQL `db\` folder mein hai, aur `ai_
 2026-11-02T08:23:30.524Z
 
 CHAT_EXPORT is me bhi update kro new chat
+
+
+---
+
+## Naya chat (is session ke baad, timestamps ke bina)
+
+## User
+
+tool kha se bna skta hu mai konsi screen hai?
+
+## Assistant
+
+Aap ka sawaal "tool kahan se bana sakte hain aur ye kaunsi screen hai" ho sakta hai. Dono ka short jawab:
+
+**Screens ye hain:**
+
+| App | Kaun use karta hai | Kya hota hai | Kaise kholen |
+|---|---|---|---|
+| Customer | Customer | Feature chunna, photo aur prompt bhejna, result dekhna | `preview\customer.html` (local) |
+| Admin | Aap (admin) | Tasks, Workers, Features, Settings, Tools, Prompts | `preview\admin.html` (local) |
+| Worker | Worker computer | Tasks lena, Gemini call, upload | `preview\worker.html` ya Canvas artifact |
+
+**Local mein kholne ka tarika:**
+1. Project folder `E:\Mohit\photo tool` mein Vite chalayein (launch config ka naam `ai-studio-preview`, port 5173).
+2. Browser mein kholen:
+   - http://localhost:5173/customer.html
+   - http://localhost:5173/admin.html
+   - http://localhost:5173/worker.html
+
+**Admin mein screens:** Task (default), Workers, Features. Workers screen par task list bhi dikhti hai, aur wahan results ke tabs click karne par data aata hai.
+
+**Worker Canvas mein:** https://claude.ai/artifact/QgZ5KTC13n2r3D2oyrd6Hp (ye tab khula rahna chahiye).
+
+Agar aap ka sawaal kuch aur tha, jaise tool ko kahan **banayein** (code kahan edit karein), to bataiye. Wo `app\` folder mein hai aur database ke liye `db\` folder, docs `docs\` mein hain.
+
+## User
+
+app kha se bna skta hai jyse deside huia tha hai ik worker mere weargen app k liye duara koi aur ppp vese wala ki mai selete kr pao is app me yeh yeh feature add krne hai vo he dikhege us me bhi aur sara recod bhi rhaga ki yeh kis app se aya hai
+
+## Assistant
+
+Ye kaam **AI Studio ke andar hi** banega, naye project mein nahi. Database aur worker dono shared hain, isliye naya app banane se do DB aur do worker chalane padenge.
+
+**Plan:**
+
+| Kaam | Kahan | Kya badlega |
+|---|---|---|
+| App ki list (WearGen, PPP, etc.) | DB: naya table `ai_studio_apps` | Har app ka naam, key, enabled |
+| Har task kis app se aaya | DB: `ai_studio_tasks` mein `app_id` column | Record par pakka pata chalega |
+| Customer app selection | `app\AI Studio Customer.jsx` | Upar dropdown se app chunna, phir uske features dikhna |
+| Features app ke hisaab se | DB: catalog mein `app_id` | WearGen ke features alag, PPP ke alag |
+| Admin mein filter aur source | `app\AI Studio Admin.jsx` | Tasks table mein "App" column, app ke hisaab se filter |
+| Worker | Koi change nahi | Worker task lega, app ki zarurat nahi |
+
+**Ye kaam kaise hoga:** pehle SQL (`db\` folder mein naya file), phir customer aur admin ka UI. Worker code change nahi hoga, kyunki sab kuch DB se chalega.
+
+**Ek sawaal:** kya WearGen app ke users aur PPP ke users ka login alag rakhna hai, ya dono same customer login se chalenge? Isse pata chalega ki `app_id` task ke saath customer ke liye bhi chahiye ya nahi. Jawab de dein to main pehle DB part banana shuru kar dunga.
+
+## User
+
+yeh kam kr diya hai tumne?
+
+## Assistant
+
+Nahi, ye kaam abhi shuru nahi hua hai. Maine sirf plan bataya tha. Koi file change nahi hui: na DB mein `ai_studio_apps` table bana, na `app_id` column aaya, na Customer ya Admin code badla.
+
+Agar aap haan bolein, to main pehle DB part (naya SQL file `db\` mein) likhunga, phir Customer aur Admin ka UI. Pehle ye bata dein: WearGen aur PPP ke users ka login alag rakhna hai ya same?
+
+## User
+
+kro fir
+
+## Assistant
+
+Theek hai, shuru karta hoon. Login wala sawaal abhi khula hai, isliye default lunga: customer login same rahega, aur har task aur feature par `app_id` lagega. Pehle db folder ki current files dekhta hoon.
+
+## User
+
+task bno me size ration and 1k 2k 4k etc aysa bhjei ki bhi oeption add kro
+
+## Assistant
+
+Admin mein aspect ratio aur size ke dropdown pehle se hain, lekin size model ki `sizes` list par depend karta hai. Form ka hissa dekhta hoon.
+
+Ek asli gap mila: 1K/2K/4K sirf `gemini-3.1-flash-image-preview` aur `gemini-3-pro-image-preview` ke liye set hain. Jo lite model maine pehle add kiya tha, uski sizes khali hain, isliye usme size dropdown disabled rehta hai. Admin mein model ki sizes edit karne ka option bhi nahi hai.
+
+## User
+
+tokne diya to tha tumko maine
+
+## Assistant
+
+Aap sahi keh rahe hain, token pehle diya tha. Use is command mein sirf ek baar env var ke roop mein daal raha hoon, kisi file mein nahi likhunga. Dono SQL files ek ke baad ek chalaata hoon.
+
+Dono SQL chal gaye hain, aur verify ho gaya hai:
+- **Apps:** `ai_studio_apps` mein WearGen aur PPP hain. `get_app_list()` dono ko return karta hai.
+- **Feature mapping:** `ai_studio_app_tasks` mein 88 links hain, yani har app ke liye sare features.
+- **Purane tasks:** 6 tasks `weargen` app ke saath mark hain.
+- **Image models:** `gemini-3.1-flash-image-preview` aur `gemini-3-pro-image-preview` dono `image` kind ke hain, on hain, aur sizes 1K, 2K, 4K hain.
+
+Ab Customer app mein app dropdown aur Admin ki Models screen ke size checkboxes DB se chalne chahiye. Browser mein ek baar check karna baaki hai.
+
+Ek salah: ye token ab chat mein do baar aa chuka hai. Kaam khatam ho gaya hai, isliye Supabase dashboard se ise revoke karke naya banayein.
+
+## User
+
+n ai_studio_apps.sql tum clo isko
+
+## Assistant
+
+SQL chalane ke liye mere paas Supabase ka access token nahi hai. Environment mein `SBP_TOKEN` set nahi hai, aur mujhe token chat mein dobara nahi maangna chahiye.
+
+Do tarike hain:
+
+**1. Aap Supabase Dashboard se chalayein (sabse aasan):**
+- Supabase project `kdwkdhjtcebrhtokhirg` kholein, phir SQL Editor.
+- `ai_studio_apps.sql` ka poora content paste karke Run dabayein.
+
+**2. Ya token environment mein set karke mujhe bolein:** terminal mein ye command chalayein, phir mujhe bata dein ki set ho gaya:
+
+```bash
+export SBP_TOKEN="apna-supabase-access-token"
+```
+
+## User
+
+Ek asli gap mila: 1K/2K/4K sirf gemini-3.1-flash-image-preview aur gemini-3-pro-image-preview yeh bhi add kro fir db me
+
+## Assistant
+
+Ye do models `ai_studio_engine.sql` ke seed mein already hain, lekin DB mein ya to nahi hain, ya `kind` khali hai (purani restriction ki wajah se). Isliye ek idempotent upsert likhta hoon.
+
+Upsert SQL file bani: `db\ai_studio_image_sizes.sql`. Ye `kind` ko `image` set karta hai, aspect ratios aur 1K, 2K, 4K sizes daalta hai, aur model ko on karta hai. Setup file ke end mein bhi add ho gayi hai.
+
+Abhi ye DB par nahi chali hai, kyunki `SBP_TOKEN` set nahi hai. Chalane ka tarika pichle jawab wala hi hai.
+
+## User
+
+tokne diya to tha tumko maine
+
+## Assistant
+
+Aap sahi keh rahe hain, token pehle diya tha. Use is command mein sirf ek baar env var ke roop mein daal raha hoon, kisi file mein nahi likhunga. Dono SQL files ek ke baad ek chalaata hoon.
+
+Dono SQL chal gaye hain, aur verify ho gaya hai. Image models ab `image` kind ke hain, on hain, aur sizes 1K, 2K, 4K hain.
+
+## User
+
+1K, 2K, 4K hain. shote se shote bhi add kro size
+
+## Assistant
+
+Size list mein sabse chhota 0.5K add kar raha hoon. Pehle dekhta hoon ki kaun si jagah size ki list hard-coded hai.
+
+Sabse chhota size **0.5K** add ho gaya hai. Ab size list 0.5K, 1K, 2K, 4K hai.
+
+- **Database:** task banate waqt size check ab 0.5K ko bhi allow karta hai. Live database par chala diya hai.
+- **Admin:** Models screen ke size checkboxes mein 0.5K dikhega.
+- **Repo:** SQL files mein bhi same change hai, aur `ai_studio_size_05k.sql` naya file hai.
+
+Dhyan dein: 0.5K har model support nahi karta. Admin > Models mein jis model par 0.5K chahiye, uska checkbox tick karein. Support na karne wale model par tick mat karein, warna task fail hoga.
+
+## User
+
+ab me sab query cla de hai tumne?
+
+## Assistant
+
+Haan, DB ke liye jo bhi SQL banaya tha, wo sab chal chuka hai:
+
+| SQL file | Kya karta hai | Status |
+|---|---|---|
+| `ai_studio_apps.sql` | WearGen/PPP apps, feature mapping, `app_id` | Chal gaya, verify ho gaya |
+| `ai_studio_image_sizes.sql` | 3.1 Flash aur 3 Pro ke 1K/2K/4K | Chal gaya, verify ho gaya |
+| `ai_studio_size_05k.sql` | Size check mein 0.5K allow | Chal gaya |
+
+Ab aapko DB ke liye kuch aur nahi bhejna hai.
+
+**Aapke side ke kaam baaki hain:**
+- Admin > Models mein jis model par 0.5K chahiye, use tick karein.
+- Browser mein ek baar check karein: Customer app mein app dropdown, Admin mein size checkboxes, aur task banane par size dropdown.
+- Supabase token ko revoke karke naya banayein.
+
+## User
+
+480 720 1080 yeh bhi add kro
+
+## Assistant
+
+Ye sizes Gemini ke `imageSize` mein nahi chalte. Gemini sirf 0.5K, 1K, 2K, 4K leta hai. Agar main 480, 720, 1080 ko seedha list mein daal doon, to worker Gemini ko ye values bhejega aur task fail hoga.
+
+Iska theek tareeka do mein se ek ho sakta hai:
+1. **Pixel size ko output resize mein badlein.** Task Gemini ko nazdiki supported size mein jayega, phir worker result ko 480, 720 ya 1080 tak chhota karega.
+2. **Pixel sizes ko chhod kar sirf 0.5K/1K/2K/4K rakhein.** Ye sabse safe hai.
+
+Kaunsa rakhna hai? Agar 1 chahiye, to bataiye ki 480, 720, 1080 **lambi side** ke liye hain ya **chhoti side** ke liye.
+
+## User
+
+Task queue mein daalo pr click kru to task sath he sath niche aa jna chiye jyse chat ki funclatuy hoti hai vese he bno is screen ko liave upldae ko extra query hit live stream jyse
+
+## Assistant
+
+Ye kaam admin ke "Task banao" screen mein hoga. Task bante hi neeche chat jaisi list mein aayega, aur status ka update realtime se aayega, bina extra query ke.
+
+- **Task bhejna:** server ka jo response aata hai, wahi list mein add hota hai. Koi alag query nahi lagti.
+- **Status:** worker jab task ka status badlega, to realtime event mein poora row aata hai. Usi se list ka entry update ho jata hai.
+- **Layout:** sabse purana task upar, naya neeche. Naya task aane par list apne-aap neeche scroll hoti hai.
+- **Limit:** ek baar mein 50 tasks tak list mein rahte hain.
+
+Parse check pass hai. Browser mein live test abhi nahi hua.
+
+## User
+
+kitne sec me res aya vo bhi dikna ciye and db me bhi store hona chiye
+
+## Assistant
+
+Ye do kaam hain: DB mein time store karna aur list mein dikhana. Table mein finish ya duration column nahi tha. Worker code badalne ki zarurat nahi padegi: ek DB trigger status `done` ya `failed` hone par time khud bharega.
+
+- `finished_at`: task kab done ya failed hua.
+- `duration_ms`: queue se finish tak kitna time laga.
+- `process_ms`: worker ne pick karne se finish tak kitna time liya.
+
+Admin mein "Bheje gaye kaam (live)" list mein har task ke aage time dikhega, aur Results table mein naya "Sek" column hai. Purane tasks ka time khali hai.
+
+## User
+
+yeh add kro ki kam parrler me kitni me krnva hai 4 ikthe tastk 10 20 yeh edit admin krga har ik worker k liye lag krga
+
+## Assistant
+
+Ye option pehle se hai: `ai_studio_workers.task_limit`, aur Admin ki Workers screen par har worker ke saamne "Limit" box. Ek gap tha: worker ko limit badalne ka pata nahi chalta tha. Ab worker limit badalte hi settings dobara padhta hai.
+
+Parse check pass hai. Browser mein ek worker par limit 4 se 10 karke check karein.
+
+## User
+
+(pasted content: admin live list ka output, jisme chat ka jawab "#8 · WearGen · Chat (sirf text)" dikh raha hai)
+
+chat me * admin shi dhek paya isko
+
+## Assistant
+
+Admin ki live list mein chat ka jawab markdown ke symbols (`**`, `###`, `>`) ke saath raw dikh raha tha. Ab admin mein chhota markdown renderer hai: headings, bold, italic, code, list, quote render hote hain. Renderer HTML inject nahi karta, isliye safe hai.
+
+Customer app ke "Mere results" mein bhi same raw `**` dikhega. Chahiye to wahan bhi lagaya ja sakta hai.
+
+## User
+
+view ki opetion bhi add kro admin me
+
+## Assistant
+
+Admin mein ab har task ke liye **Dekho** option hai. Ye Results table ke row ke end mein, aur "Bheje gaye kaam (live)" list mein har entry par hai.
+
+Dekho par ek popup khulta hai, jisme prompt, input photos, result photos, jawab (markdown ke saath), error, aur time dikhta hai. Popup ke bahar click ya "Band karo" se band hota hai.
+
+## User
+
+worker web hook ki tra kam kr rha hai bato? jab table me entry ati hai tab se get krta hai value?
+
+## Assistant
+
+Worker webhook ki tarah kaam nahi karta. Ye "push ka signal, phir pull" wala tarika hai.
+
+1. Customer ya admin task bhejta hai, jo `ai_studio_tasks` table mein insert hota hai.
+2. Realtime se worker ko ek signal milta hai: "tasks table mein kuch badla". Is signal mein task ka data nahi hota.
+3. Worker 3 second rukta hai, phir database se pucchta hai (`get_pending_for_worker`). Value yahin se aati hai.
+4. Worker free slots ke hisaab se task claim karta hai aur chalata hai.
+
+**Fallback:** realtime band ho ya signal chhoot jaye, to worker har `fallback_sec` par khud pucchta hai.
+
+**Ek kharabi:** realtime signal har tarah ka task change sunta hai, including worker ke apne status updates. Isko sirf naye tasks (INSERT) tak limit kar sakte hain.
+
+## User
+
+Fallback: realtime band ho (jaise Canvas/blob mein) ya signal chhoot jaye, to worker har fallback_sec (ab 30 sec) par khud pucchta hai. Ye timer bhi same RPC call karta hai. matlab har bar call hoti hai?
+
+## Assistant
+
+Haan, har fallback tick par ek call hoti hai. Ye bina zarurat nahi hoti, aur ise kam kiya ja sakta hai.
+
+- Har `fallback_sec` (30 sec) par worker `get_pending_for_worker` call karta hai. Ek worker ke liye ye 2 calls per minute hain.
+- Ye call tab hi jaati hai jab worker ke paas free slot ho.
+- Alag se heartbeat bhi har `heartbeat_sec` (30 sec) par chalta hai.
+
+**Options:**
+1. Fallback ko 120 sec kar dein.
+2. Realtime connected ho to fallback 5 minute par rakhein, aur band hone par 30 sec.
+3. Realtime signal ko sirf naye tasks (INSERT) tak limit karein.
+
+## User
+
+serviecc ki tra call hota hai matlb 30 sec bad har bar
+
+## Assistant
+
+Haan, sahi samjhe. Jab worker ke paas free slot ho, tab har 30 sec par ek pending-check call jati hai, chahe kuch naya ho ya nahi. Iske saath har 30 sec par heartbeat call alag se jati hai.
+
+Mera suggestion: fallback ko 120 sec karna, aur realtime ko sirf INSERT par chalana. Karun?
+
+## User
+
+is se to 24 hour me bandwitgh bhut use hogi yeh glt nhi hai?
+
+## Assistant
+
+Aap sahi keh rahe hain ki ye calls bandwidth lete hain. Lekin ye kitna bada hai, ye payload ke size par depend karta hai.
+
+| Kya | Kitni baar | Size (approx) | Ek din mein (1 worker) |
+|---|---|---|---|
+| Pending-check, queue khali | har 30 sec | ~1 KB | ~2,880 calls, ~3 MB |
+| Heartbeat | har 30 sec | ~1 KB | ~3 MB |
+| Pending-check, queue bhari | jab slot free ho | 40 tasks × ~1 KB | sirf kaam ke waqt |
+
+Khali worker ke liye roughly 6 MB/din. Sabse bada hissa calls ki ginti hai, payload nahi. Isliye fallback lamba karna aur realtime ko sirf INSERT par chalana sabse zyada bachayega. Dono badlav karun?
+
+## User
+
+clo fir
+
+## Assistant
+
+Dono badlav kiye:
+
+- **Database:** fallback ab 120 sec hai. DB mein chala diya hai aur verify ho gaya hai.
+- **Worker:** realtime sirf naye tasks par jaaga karta hai. Worker ke apne status updates par call nahi jati.
+
+Parse check pass hai.
+
+## User
+
+yeh sec admin se handel ho rhe hai dashboad pr?
+
+## Assistant
+
+Nahi, abhi ye admin se handle nahi hote. `fallback_sec` aur `heartbeat_sec` sirf database mein the. Admin ki Settings screen mein inka koi box nahi tha. Aisa karne ka prastav tha: Settings screen mein do fields. Aisa karun?
+
+## User
+
+dalo fir
+
+## Assistant
+
+Admin ki Settings screen par ab **Fallback check (sec)** aur **Heartbeat (sec)** dono boxes hain, aur Save se database mein jaate hain.
+
+Ranges database ke constraint ke hisaab se rakhe hain: heartbeat 5 se 120 sec, fallback 10 se 600 sec. Worker ye values `get_worker_config` se leta hai, to Save ke baad next config load par naya time lagega.
+
+## User
+
+Ops settings (sab par lagti hain) yeh thoda acha bno samjh nhi aa rha hai kkuch
+
+## Assistant
+
+Heading badal di hai. Ab wo "**Worker settings**" hai, aur neeche ek line mein saaf likha hai ki ye sab workers par ek saath lagti hain, aur har worker ki apni limit Workers screen se badalni hai. Save button ka naam bhi "**Settings save karo**" kar diya hai.
+
+## User
+
+worker k screen laga bno us e actice bnad worker ana ciye
+
+## Assistant
+
+Admin ki Workers screen par ab teen tabs hain: **Active**, **Offline**, **Sab**. By default sirf active workers dikhte hain, aur har tab par count hai.
+
+**Active ka matlab:** wo worker jiska last heartbeat pichle do heartbeat ke andar aaya ho (kam se kam 60 sec). Pause wale workers bhi Active mein hain, unpe "Paused" badge dikhta hai.
+
+## User
+
+har 10 mint bad log clear fronded pr worker screen
+
+## Assistant
+
+Worker app ka log memory mein rakha jata hai, database mein nahi. Ab har 10 minute par screen ka log apne-aap khali ho jayega. Ye sirf screen par hai, database par koi asar nahi. Tasks, results aur admin ka action log waise hi rahenge.
+
+## User
+
+Admin ne ye worker pause kiya hai. Naya task nahi lega, jo chal raha hai wo complete hoga.
+
+ yeh kyu aa rha hai
+
+## Assistant
+
+Ye banner tab dikhta hai jab worker ka `paused` flag true ho. Pause ka matlab: naya task nahi lega, aur jo chal raha hai wo khatam hoga.
+
+Ek dikkat hai: banner har pause par yahi text dikhata hai, chahe pause kisne kiya ho. Worker agar khud pause hota hai (jaise Gemini key ki galti par), to bhi yahi "Admin ne pause kiya" likha aata hai, jo galat hai.
+
+## User
+
+but maine admin ne to kiya he nhi hai
+
+## Assistant
+
+Admin ne pause nahi kiya, to ye worker ne khud pause kiya hai. Code mein do jagah ye hota hai:
+
+1. **Gemini key ki galti:** task fail hone par error mein `HTTP 401/403`, `API key`, ya `PERMISSION_DENIED` ho, to worker turant pause ho jata hai.
+2. **5 tasks lagatar fail:** agar 5 tasks ek ke baad ek fail hon, to worker pause ho jata hai.
+
+Wajah database mein `pause_reason` mein save hoti hai, aur admin ke Workers screen ke Alerts mein "khud pause hua: (wajah)" dikhta hai. Wahan dekhein.
+
+## User
+
+worker k pas to pouse button add kro fir
+
+## Assistant
+
+Worker screen par ab **"Pause karo (naya task mat lo)"** button hai. Ye worker ko pause karta hai, aur admin ke Workers screen par Paused dikhta hai.
+
+- Pause hone par naya task nahi lega. Jo chal raha hai wo khatam hoga.
+- Resume sirf admin kar sakta hai, kyunki database guard yahi rakhta hai.
+- Banner ka text bhi badal diya hai.
+
+Parse check pass hai.
+
+## User
+
+AI Studio 3 Pro Image (gemini-3-pro-image-preview) yeh model remove kro db se
+
+## Assistant
+
+Pehle check kiya ki model row ko koi foreign key reference to nahi karta. Phir row delete ki. Verify ho gaya: row ab nahi hai, aur image models ki live list mein ye nahi aata. 2 purane tasks ka `model` field wahi naam rakhta hai, lekin koi foreign key nahi hai.
+
+Repo ke `ai_studio_engine.sql` aur `ai_studio_image_sizes.sql` se entry hata di gayi hai, taaki re-run par wapas na aaye.
+
+## User
+
+kro shi sql se bhi
+
+## Assistant
+
+Repo ke SQL files mein bhi 3 Pro model ki entry hata di gayi hai:
+- `ai_studio_ops.sql`: model list ke seed se hataya.
+- `ai_studio_tasks.sql`: `ai_studio_image_models()` ki hardcoded list se hataya.
+- `ai_studio_setup.sql`: dono jagah se hataya.
+
+Har file mein comma aur bracket ki jaanch ki hai, sab theek hai. Live database par ye fix pehle se hai.
+
+## User
+
+CHAT_EXPORT is me add kro

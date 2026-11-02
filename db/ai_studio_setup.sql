@@ -224,7 +224,7 @@ create or replace function public.ai_studio_text_models() returns text[] languag
 $$;
 
 create or replace function public.ai_studio_image_models() returns text[] language sql immutable as $$
-  select array['gemini-3.1-flash-image-preview', 'gemini-3-pro-image-preview', 'gemini-2.5-flash-image-preview'];
+  select array['gemini-3.1-flash-image-preview', 'gemini-2.5-flash-image-preview'];
 $$;
 
 create or replace function public.upload_ai_studio_task(p_payload jsonb)
@@ -789,7 +789,7 @@ create table if not exists public.ai_studio_models (
   enabled  boolean not null default true
 );
 insert into public.ai_studio_models (model_id) values
-  ('gemini-3.1-flash-image-preview'), ('gemini-3-pro-image-preview'), ('gemini-2.5-flash-image-preview'),
+  ('gemini-3.1-flash-image-preview'), ('gemini-2.5-flash-image-preview'),
   ('gemini-3-flash-preview'), ('gemini-2.5-flash')
 on conflict (model_id) do nothing;
 alter table public.ai_studio_models enable row level security;
@@ -2429,7 +2429,6 @@ alter table public.ai_studio_models add column if not exists sizes text[] not nu
 
 insert into public.ai_studio_models (model_id, kind, label, aspects, sizes) values
   ('gemini-3.1-flash-image-preview', 'image', 'AI Studio 3.1 Flash Image', array['1:1','2:3','3:2','3:4','4:3','4:5','5:4','9:16','16:9','21:9'], array['1K','2K','4K']),
-  ('gemini-3-pro-image-preview',     'image', 'AI Studio 3 Pro Image',     array['1:1','2:3','3:2','3:4','4:3','4:5','5:4','9:16','16:9','21:9'], array['1K','2K','4K']),
   ('gemini-2.5-flash-image-preview', 'image', 'AI Studio 2.5 Flash Image', array['1:1','2:3','3:2','3:4','4:3','4:5','5:4','9:16','16:9','21:9'], '{}'::text[]),
   ('gemini-3-flash-preview',         'text',  'AI Studio 3 Flash (text)',  '{}'::text[], '{}'::text[]),
   ('gemini-2.5-flash',               'text',  'AI Studio 2.5 Flash (text)', '{}'::text[], '{}'::text[])
@@ -2842,8 +2841,6 @@ $$;
 
 insert into public.ai_studio_models (model_id, kind, label, aspects, sizes, enabled) values
   ('gemini-3.1-flash-image-preview', 'image', 'AI Studio 3.1 Flash Image',
-   array['1:1','2:3','3:2','3:4','4:3','4:5','5:4','9:16','16:9','21:9'], array['1K','2K','4K'], true),
-  ('gemini-3-pro-image-preview', 'image', 'AI Studio 3 Pro Image',
    array['1:1','2:3','3:2','3:4','4:3','4:5','5:4','9:16','16:9','21:9'], array['1K','2K','4K'], true)
 on conflict (model_id) do update set
   kind    = 'image',
@@ -2855,7 +2852,7 @@ on conflict (model_id) do update set
 -- Check: these two should show kind 'image' with sizes 1K, 2K, 4K
 select model_id, kind, enabled, aspects, sizes
   from public.ai_studio_models
- where model_id in ('gemini-3.1-flash-image-preview', 'gemini-3-pro-image-preview');
+ where model_id = 'gemini-3.1-flash-image-preview';
 
 
 -- ============================================================

@@ -31,7 +31,7 @@ create table if not exists public.ai_studio_models (
   enabled  boolean not null default true
 );
 insert into public.ai_studio_models (model_id) values
-  ('gemini-3.1-flash-image-preview'), ('gemini-3-pro-image-preview'), ('gemini-2.5-flash-image-preview'),
+  ('gemini-3.1-flash-image-preview'), ('gemini-2.5-flash-image-preview'),
   ('gemini-3-flash-preview'), ('gemini-2.5-flash')
 on conflict (model_id) do nothing;
 alter table public.ai_studio_models enable row level security;

@@ -17,7 +17,6 @@ alter table public.ai_studio_models add column if not exists sizes text[] not nu
 
 insert into public.ai_studio_models (model_id, kind, label, aspects, sizes) values
   ('gemini-3.1-flash-image-preview', 'image', 'AI Studio 3.1 Flash Image', array['1:1','2:3','3:2','3:4','4:3','4:5','5:4','9:16','16:9','21:9'], array['1K','2K','4K']),
-  ('gemini-3-pro-image-preview',     'image', 'AI Studio 3 Pro Image',     array['1:1','2:3','3:2','3:4','4:3','4:5','5:4','9:16','16:9','21:9'], array['1K','2K','4K']),
   ('gemini-2.5-flash-image-preview', 'image', 'AI Studio 2.5 Flash Image', array['1:1','2:3','3:2','3:4','4:3','4:5','5:4','9:16','16:9','21:9'], '{}'::text[]),
   ('gemini-3-flash-preview',         'text',  'AI Studio 3 Flash (text)',  '{}'::text[], '{}'::text[]),
   ('gemini-2.5-flash',               'text',  'AI Studio 2.5 Flash (text)', '{}'::text[], '{}'::text[])

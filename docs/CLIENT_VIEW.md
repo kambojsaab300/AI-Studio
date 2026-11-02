@@ -6,7 +6,11 @@ AI Studio makes photos and text with AI. The customer chooses what they want,
 uploads photos, writes a short prompt, and gets the result. The admin controls
 what is available, who works on what, and the daily limits.
 
+**Apps:** one AI Studio serves several apps (for example WearGen and PPP). The customer picks the app first; the list of features then shows only that app's features. Every result shows which app it came from.
+
 ## What the customer can do
+
+**Image size (for models that support it):** 0.5K, 1K, 2K or 4K. The admin decides which sizes each model supports.
 
 ### Photos (image)
 
@@ -58,16 +62,17 @@ what is available, who works on what, and the daily limits.
 
 | Area | What the admin controls |
 |---|---|
-| Tasks | Create a task, see the list, change priority, delete |
-| Workers | See which workers are online, pause, resume, drain, set a limit per worker |
+| Tasks | Create a task (choose app, feature, photos, size). The new task appears at the bottom of a live list, with its status and how many seconds it took. "Dekho" opens the full detail. Results can be filtered by Pending, Processing, Completed and Failed, 10 per page. |
+| Workers | See which workers are active (Active, Offline, or all), pause, resume, drain, set a limit per worker. A worker can also pause itself from its own screen. Only the admin can resume it. |
 | Clean-up | Put stuck tasks back to pending, or delete failed tasks: for one worker or for all. Each step asks for confirmation. |
 | Tools | Chat and image are separate tools. Each worker has its own tools. The admin can also change a feature's names and photo slots. |
 | Worker work | Choose which features each worker runs |
-| Features | Turn a feature on or off, show it to customers or hide it |
+| Features | Turn a feature on or off, show it to customers or hide it, and choose which app (WearGen, PPP, or both) shows it |
+| Apps | Each app's feature list is set by the admin. A new app can be added in the database, with no new app code. |
 | Family roles | Turn family roles on or off, add a new role (for example "uncle") |
 | Prompts | Edit the instructions for each feature, and turn a feature's prompt off |
-| Models | Turn each AI model on or off. The model list is kept in the database, so a new model can be added without a new app. |
-| Settings | Limits, daily budget, customer daily limit, maintenance mode, face check level, photo size and quality |
+| Models | Turn each AI model on or off, and tick the image sizes (0.5K, 1K, 2K, 4K) and aspect ratios it supports. The model list is kept in the database, so a new model can be added without a new app. |
+| Settings | Worker settings: limits, daily budget, customer daily limit, maintenance mode, face check level, photo size and quality, and how often the worker checks for work (fallback) and how often it reports it is alive (heartbeat) |
 | Email alerts | Get an email when all workers are offline, the queue is full, or a worker pauses itself |
 | Action log | A record of every change the admin makes |
 

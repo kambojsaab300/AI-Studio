@@ -904,9 +904,14 @@ export default function AiStudioWorker() {
             {drain && <p className="text-xs text-sky-200 bg-sky-500/10 border border-sky-500/30 rounded-xl px-3 py-2">Drain mode: naya task nahi lega, chal rahe tasks khatam honge.</p>}
             {settings.budget_left != null && <p className="text-[11px] text-stone-400">Aaj ka bacha Gemini budget: {settings.budget_left}</p>}
             {settings.disabled_models?.length > 0 && <p className="text-[11px] text-stone-400">Band models: {settings.disabled_models.join(', ')}</p>}
+            {!paused && (
+                <button type="button" onClick={() => autoPause('Worker ne khud pause kiya (screen se)')} className="h-9 px-4 rounded-xl border border-rose-500/40 bg-rose-500/10 text-rose-200 text-xs font-bold">
+                    Pause karo (naya task mat lo)
+                </button>
+            )}
             {paused && (
                 <p className="text-xs text-rose-200 bg-rose-500/10 border border-rose-500/30 rounded-xl px-3 py-2 flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4" /> Admin ne ye worker pause kiya hai. Naya task nahi lega, jo chal raha hai wo complete hoga.
+                    <AlertCircle className="w-4 h-4" /> Ye worker pause hai. Naya task nahi lega, jo chal raha hai wo complete hoga. Wapas chalu karne ke liye admin ke Workers screen se Resume karein.
                 </p>
             )}
 

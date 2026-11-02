@@ -6,8 +6,6 @@
 
 insert into public.ai_studio_models (model_id, kind, label, aspects, sizes, enabled) values
   ('gemini-3.1-flash-image-preview', 'image', 'AI Studio 3.1 Flash Image',
-   array['1:1','2:3','3:2','3:4','4:3','4:5','5:4','9:16','16:9','21:9'], array['1K','2K','4K'], true),
-  ('gemini-3-pro-image-preview', 'image', 'AI Studio 3 Pro Image',
    array['1:1','2:3','3:2','3:4','4:3','4:5','5:4','9:16','16:9','21:9'], array['1K','2K','4K'], true)
 on conflict (model_id) do update set
   kind    = 'image',
@@ -19,4 +17,4 @@ on conflict (model_id) do update set
 -- Check: these two should show kind 'image' with sizes 1K, 2K, 4K
 select model_id, kind, enabled, aspects, sizes
   from public.ai_studio_models
- where model_id in ('gemini-3.1-flash-image-preview', 'gemini-3-pro-image-preview');
+ where model_id = 'gemini-3.1-flash-image-preview';
