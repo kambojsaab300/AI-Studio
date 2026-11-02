@@ -1380,7 +1380,8 @@ export default function AiStudioAdmin() {
                     )}
 
                     <section className="bg-stone-900 border border-white/10 rounded-2xl p-4 space-y-4">
-                        <h2 className="text-sm font-extrabold">Ops settings (sab par lagti hain)</h2>
+                        <h2 className="text-sm font-extrabold">Worker settings</h2>
+                        <p className="text-[11px] text-stone-400">Ye sab workers par ek saath lagti hain. Har worker ki apni limit Workers screen se badlein.</p>
                         {!cfg ? <p className="text-xs text-stone-500">Load ho raha hai...</p> : (
                             <div className="grid gap-4 md:grid-cols-3">
                                 {[['max_attempts', 'Kitni baar koshish (1-5)', 1, 5], ['retry_delay_sec', 'Retry se pehle wait (sec, 0-3600)', 0, 3600], ['task_timeout_sec', 'Task ki max time (sec, 60-3600)', 60, 3600], ['alert_queue_size', 'Queue alert kab (pending tasks)', 1, 100000], ['user_daily_task_limit', 'Customer ka din ka limit (0 = koi nahi)', 0, 100000], ['daily_gemini_budget', 'Din ka Gemini budget (0 = unlimited)', 0, 10000000], ['match_threshold', 'Chehra match kam se kam (0-100)', 0, 100], ['match_retries', 'Chehra kam mile to dobara (0-5)', 0, 5], ['stale_min', 'Atki task kitne minute baad dobara (1-240)', 1, 240], ['fallback_sec', 'Pending check kitne sec mein (10-600)', 10, 600], ['heartbeat_sec', 'Heartbeat kitne sec mein (5-120)', 5, 120], ['image_max_side', 'Photo ka max size px (512-4096)', 512, 4096], ['image_quality', 'Photo quality (0.5-1, jaise 0.85)', 0.5, 1]].map(([key, label, min, max]) => (
@@ -1394,7 +1395,7 @@ export default function AiStudioAdmin() {
                                 </div>
                             </div>
                         )}
-                        <button onClick={saveConfig} disabled={!cfg} className="h-10 px-5 bg-yellow-400 text-stone-950 rounded-xl text-xs font-black disabled:opacity-40">Ops settings save karo</button>
+                        <button onClick={saveConfig} disabled={!cfg} className="h-10 px-5 bg-yellow-400 text-stone-950 rounded-xl text-xs font-black disabled:opacity-40">Settings save karo</button>
                     </section>
 
                     <section className="bg-stone-900 border border-white/10 rounded-2xl p-4 space-y-3">
