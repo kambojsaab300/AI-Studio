@@ -525,6 +525,7 @@ export default function AiStudioAdmin() {
     const [form, setForm] = useState(EMPTY_FORM);
     // Workers screen
     const [workers, setWorkers] = useState([]);
+    const [workerView, setWorkerView] = useState('active');   // 'active' | 'offline' | 'all'
     const [tasks, setTasks] = useState([]);
     // Results (Task screen): one tab and one page, loaded only on click
     const [resultTab, setResultTab] = useState('pending');
@@ -1068,7 +1069,11 @@ export default function AiStudioAdmin() {
     };
 
     // ── Derived numbers for the workers screen ──
-    const liveWorkers = workers.filter(w => new Date(w.last_seen).getTime() > Date.now() - 60000 && !w.paused);
+    // A worker is active when it was seen within two heartbeats (at least 60 sec)
+    const aliveMs = Math.max(60, Number(cfg?.heartbeat_sec || 30) * 2) * 1000;
+    const isAlive = (w) => new Date(w.last_seen).getTime() > Date.now() - aliveMs;
+    const liveWorkers = workers.filter(w => isAlive(w) && !w.paused);
+    const activeCount = workers.filter(isAlive).length;
     const fairLimit = Math.max(1, Math.ceil((tasks.filter(t => t.status === 'pending' || t.status === 'processing').length) / Math.max(1, liveWorkers.length)));
 
     // Alerts for the admin (shown at the top of the workers screen)
@@ -1529,14 +1534,19 @@ export default function AiStudioAdmin() {
                                 <button onClick={() => togglePause('all', false)} className="h-9 px-3 rounded-xl border border-white/10 bg-stone-800 text-xs font-bold flex items-center gap-1.5"><Play className="w-3.5 h-3.5" /> Sab resume</button>
                             </div>
                         </div>
+                        <div className="flex flex-wrap gap-1.5">
+                            {[['active', `Active (${activeCount})`], ['offline', `Offline (${workers.length - activeCount})`], ['all', `Sab (${workers.length})`]].map(([key, label]) => (
+                                <button key={key} type="button" onClick={() => setWorkerView(key)} className={`h-8 px-3 rounded-lg text-xs font-bold border ${workerView === key ? 'bg-yellow-400 text-stone-950 border-yellow-300' : 'bg-stone-950 border-white/10 text-stone-300'}`}>{label}</button>
+                            ))}
+                        </div>
                         <div className="overflow-x-auto">
                             <table className="w-full text-xs">
                                 <thead className="text-stone-400 text-left">
                                     <tr><th className="py-2">Worker</th><th>Status</th><th>Chal rahe</th><th>Done</th><th>Last seen</th><th></th></tr>
                                 </thead>
                                 <tbody>
-                                    {workers.map(w => {
-                                        const alive = new Date(w.last_seen).getTime() > Date.now() - 60000;
+                                    {workers.filter(w => workerView === 'all' || (workerView === 'active') === isAlive(w)).map(w => {
+                                        const alive = isAlive(w);
                                         return (
                                             <tr key={w.worker_id} className="border-t border-white/5">
                                                 <td className="py-2 font-mono font-bold text-yellow-300">{w.worker_id}</td>

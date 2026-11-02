@@ -467,6 +467,11 @@ export default function AiStudioWorker() {
     const log = useCallback((text) => {
         setLogs(prev => [{ t: new Date().toLocaleTimeString(), text }, ...prev].slice(0, 80));
     }, []);
+    // The screen log is cleared every 10 minutes. It only clears what is on screen, not the database.
+    useEffect(() => {
+        const timer = setInterval(() => setLogs([]), 10 * 60 * 1000);
+        return () => clearInterval(timer);
+    }, []);
 
     // This worker's tasks: one tab and one page per click (no polling)
     const [myTab, setMyTab] = useState('pending');
