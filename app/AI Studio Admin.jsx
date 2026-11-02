@@ -1273,7 +1273,7 @@ export default function AiStudioAdmin() {
                             <p>Model: <span className="font-mono">{viewTask.model}</span></p>
                             <p>Worker: <span className="font-mono">{viewTask.worker_id || '—'}</span></p>
                             <p>Bheja gaya: {viewTask.created_at ? new Date(viewTask.created_at).toLocaleString() : '—'}</p>
-                            <p>Kitna time: {viewTask.duration_ms != null ? `${(viewTask.duration_ms / 1000).toFixed(1)} sek` : '—'}{viewTask.process_ms != null && <span className="text-stone-400"> (worker {(viewTask.process_ms / 1000).toFixed(1)} sek)</span>}</p>
+                            <p>Kitna time: {viewTask.duration_ms != null ? `${(viewTask.duration_ms / 1000).toFixed(1)} sec` : '—'}{viewTask.process_ms != null && <span className="text-stone-400"> (worker {(viewTask.process_ms / 1000).toFixed(1)} sec)</span>}</p>
                             {viewTask.aspect_ratio && <p>Aspect / size: {viewTask.aspect_ratio}{viewTask.image_size ? ' · ' + viewTask.image_size : ''}</p>}
                             {viewTask.face_match_score != null && <p>Chehra match: {viewTask.face_match_score}</p>}
                         </div>
@@ -1310,8 +1310,8 @@ export default function AiStudioAdmin() {
                                         <button type="button" onClick={() => setViewTask(t)} className="underline text-yellow-300">Dekho</button>
                                         {t.duration_ms != null && (
                                             <span className="font-mono text-stone-400" title="Queue se finish tak">
-                                                {(t.duration_ms / 1000).toFixed(1)} sek
-                                                {t.process_ms != null && <span className="text-stone-500"> (worker {(t.process_ms / 1000).toFixed(1)} sek)</span>}
+                                                {(t.duration_ms / 1000).toFixed(1)} sec
+                                                {t.process_ms != null && <span className="text-stone-500"> (worker {(t.process_ms / 1000).toFixed(1)} sec)</span>}
                                             </span>
                                         )}
                                         <span className={`font-bold ${t.status === 'done' ? 'text-emerald-300' : t.status === 'failed' ? 'text-rose-300' : 'text-yellow-300'}`}>{t.status}</span>
@@ -1338,7 +1338,7 @@ export default function AiStudioAdmin() {
                     </div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-xs">
-                            <thead className="text-left text-stone-400"><tr><th className="p-2">#</th><th className="p-2">App</th><th className="p-2">Kaam</th><th className="p-2">Model</th><th className="p-2">Worker</th><th className="p-2">Sek</th><th className="p-2">Result</th><th className="p-2">Error</th><th className="p-2">Dekho</th></tr></thead>
+                            <thead className="text-left text-stone-400"><tr><th className="p-2">#</th><th className="p-2">App</th><th className="p-2">Kaam</th><th className="p-2">Model</th><th className="p-2">Worker</th><th className="p-2">Sec</th><th className="p-2">Result</th><th className="p-2">Error</th><th className="p-2">Dekho</th></tr></thead>
                             <tbody>
                                 {resultRows.map(t => (
                                     <tr key={t.id} className="border-t border-white/5 align-top">
