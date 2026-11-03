@@ -896,7 +896,7 @@ export default function AiStudioWorker() {
         if (!client || !workerIdRef.current) return;
         const from = page * MY_PAGE_SIZE;
         const { data, error, count } = await client.from(TABLES.TASKS)
-            .select('id, task_type, model, status, error, output_text, output_image_url, imgbb_image_urls, face_match_score, batch_count, created_at', { count: 'exact' })
+            .select('id, app_id, task_type, model, status, error, output_text, output_image_url, imgbb_image_urls, face_match_score, batch_count, created_at', { count: 'exact' })
             .eq('worker_id', workerIdRef.current)
             .eq('status', tab)
             .order('id', { ascending: false })
@@ -1122,7 +1122,7 @@ export default function AiStudioWorker() {
                 const result = await askModel({ ...task, history }, inputs);
                 await complete(task.id, { status: 'done', output_text: result.text });
                 onTaskCompletedSuccess();
-                log(`Task #${task.id}: text tayyar`);
+                log(`[${appLabel}] Task #${task.id}: text response tayyar`);
                 return;
             }
 
@@ -1172,7 +1172,7 @@ export default function AiStudioWorker() {
                 face_match_score: scores.length ? Math.max(...scores) : null
             });
             onTaskCompletedSuccess();
-            log(`Task #${task.id}: ${photos.length} photo (Cloudinary ${cloudUrls.length}, ImgBB ${imgbbUrls.length})`);
+            log(`[${appLabel}] Task #${task.id}: ${photos.length} photo (Cloudinary ${cloudUrls.length}, ImgBB ${imgbbUrls.length})`);
         } catch (err) {
             await failTask(task, err);
         } finally {
@@ -1488,11 +1488,11 @@ export default function AiStudioWorker() {
                 </div>
                 <div className="overflow-x-auto bg-stone-900 border border-white/10 rounded-2xl">
                     <table className="w-full text-xs">
-                        <thead className="text-left text-stone-400"><tr><th className="p-2">#</th><th className="p-2">Kaam</th><th className="p-2">Model</th><th className="p-2">Result</th><th className="p-2">Error</th></tr></thead>
+                        <thead className="text-left text-stone-400"><tr><th className="p-2">#</th><th className="p-2">App</th><th className="p-2">Kaam</th><th className="p-2">Model</th><th className="p-2">Result</th><th className="p-2">Error</th></tr></thead>
                         <tbody>
                             {myRows.map(t => (
                                 <tr key={t.id} className="border-t border-white/5 align-top">
-                                    <td className="p-2 font-mono text-yellow-300">#{t.id}</td>
+                                    <td className="p-2 font-mono text-yellow-300">#{t.id}</td><td className="p-2"><span className={`px-2 py-0.5 rounded-full font-mono text-[10px] font-bold uppercase border ${t.app_id === 'ppp' ? 'bg-purple-500/10 text-purple-300 border-purple-500/30' : 'bg-amber-400/10 text-amber-300 border-amber-400/30'}`}>{t.app_id || 'weargen'}</span></td>
                                     <td className="p-2">{TASK_TYPES[t.task_type]?.label || t.task_type}</td>
                                     <td className="p-2 font-mono text-stone-400">{t.model}</td>
                                     <td className="p-2">{t.output_image_url && <a href={t.output_image_url} target="_blank" rel="noreferrer" className="text-emerald-300 underline mr-2">Photo</a>}{t.output_text && <span className="text-stone-200">{t.output_text.slice(0, 120)}</span>}{!t.output_image_url && !t.output_text && '—'}</td>
