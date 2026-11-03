@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, RefreshCw, Eye, Image as ImageIcon } from 'lucide-react';
+import { Search, RefreshCw, Eye, Image as ImageIcon, MessageSquare, Database, Terminal } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { StatusBadge } from '../common/StatusBadge';
 import { TaskModal } from './TaskModal';
@@ -23,9 +23,9 @@ export function TaskHistory() {
         setLoading(true);
         try {
             const start = currentPage * PAGE_SIZE;
-            // Lean Column Projection: Fetch only columns needed for history view (reduces payload by 80%)
+            // Full Column Projection: Fetch all columns including output_text, output_image_urls, user_id, app_id
             const res = await sb.from(TABLES.TASKS)
-                .select('id,task_type,model,prompt,aspect_ratio,image_size,status,error,output_image_url,input_image_url,face_image_url,style_image_url,worker_id,app_id,created_at,finished_at,duration_ms,process_ms', { count: 'exact' })
+                .select('id,task_type,model,prompt,aspect_ratio,image_size,status,error,output_text,output_image_url,output_image_urls,input_image_url,face_image_url,style_image_url,worker_id,app_id,user_id,batch_count,conversation_id,face_match_score,created_at,finished_at,duration_ms,process_ms', { count: 'exact' })
                 .eq('status', currentTab)
                 .order('id', { ascending: false })
                 .range(start, start + PAGE_SIZE - 1);
@@ -171,9 +171,12 @@ export function TaskHistory() {
                                                 <span>View Photo</span>
                                             </a>
                                         ) : r.output_text ? (
-                                            <span className="font-mono text-[11px] text-stone-300 line-clamp-1 max-w-[200px]" title={r.output_text}>
-                                                {r.output_text}
-                                            </span>
+                                            <div className="flex items-center gap-1.5 text-stone-200">
+                                                <MessageSquare className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                                <span className="font-mono text-[11px] text-stone-300 line-clamp-1 max-w-[200px]" title={r.output_text}>
+                                                    {r.output_text}
+                                                </span>
+                                            </div>
                                         ) : (
                                             <span className="text-stone-600">—</span>
                                         )}
@@ -191,10 +194,11 @@ export function TaskHistory() {
                                         <button
                                             type="button"
                                             onClick={() => setSelectedTask(r)}
-                                            className="h-7 w-7 rounded-lg bg-white/5 hover:bg-white/10 text-stone-300 hover:text-white inline-flex items-center justify-center transition-colors"
-                                            title="Inspect payload"
+                                            className="h-7 px-2.5 rounded-lg bg-amber-400/10 hover:bg-amber-400/20 text-amber-300 hover:text-amber-200 text-xs font-bold inline-flex items-center gap-1 border border-amber-400/20 transition-colors"
+                                            title="Inspect payload, table source & JSON"
                                         >
-                                            <Eye className="w-3.5 h-3.5" />
+                                            <Terminal className="w-3 h-3" />
+                                            <span>JSON</span>
                                         </button>
                                     </td>
                                 </tr>

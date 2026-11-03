@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Sparkles, LogIn, LogOut, Send, RefreshCw, Download, AlertCircle, CheckCircle2, Clock, Upload, UserPlus } from 'lucide-react';
+import { 
+    Sparkles, LogIn, LogOut, Send, RefreshCw, Download, AlertCircle, CheckCircle2, 
+    Clock, Upload, UserPlus, MessageSquare, Database, Terminal, Copy, Check, X 
+} from 'lucide-react';
 
 // ============================================================
 // AI Studio: .NET Core API Client (Standalone Inline Adapter)
@@ -663,6 +666,8 @@ export default function AiStudioCustomer() {
         });
     }, [sb]);
     const [myTasks, setMyTasks] = useState([]);
+    const [selectedCustomerTask, setSelectedCustomerTask] = useState(null);
+    const [copiedJson, setCopiedJson] = useState(false);
 
     // The apps come from the database; the features shown are only the ones of the chosen app
     useEffect(() => {
@@ -1346,14 +1351,80 @@ export default function AiStudioCustomer() {
                                             <a href={url} target="_blank" rel="noreferrer" download className="h-9 w-full flex items-center justify-center gap-2 bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 rounded-xl text-xs font-bold"><Download className="w-3.5 h-3.5" /> Photo download karo</a>
                                         </div>
                                     ))}
-                                    {t.output_text && <div className="text-xs text-stone-200 bg-stone-950 border border-white/10 rounded-xl p-3 whitespace-pre-wrap max-h-60 overflow-auto">{t.output_text}</div>}
+                                    {t.output_text && (
+                                        <div className="space-y-1.5 bg-black/40 border border-emerald-500/20 rounded-xl p-3">
+                                            <p className="text-[10px] text-emerald-300 font-bold flex items-center gap-1.5 uppercase tracking-wide">
+                                                <MessageSquare className="w-3 h-3 text-emerald-400" /> Response (output_text):
+                                            </p>
+                                            <div className="text-xs text-stone-100 whitespace-pre-wrap max-h-60 overflow-auto font-sans leading-relaxed select-text">
+                                                {t.output_text}
+                                            </div>
+                                        </div>
+                                    )}
                                     {t.face_match_score != null && <p className="text-[11px] text-stone-400">Chehra milne ka score: {Math.round(t.face_match_score)}%</p>}
+
+                                    {/* 🗄️ Origin Table & JSON Format Inspector */}
+                                    <div className="pt-2.5 border-t border-white/5 flex items-center justify-between text-[11px] text-stone-400">
+                                        <span className="font-mono flex items-center gap-1">
+                                            <Database className="w-3 h-3 text-yellow-400" />
+                                            <span>Table: <strong className="text-yellow-300">ai_studio_tasks</strong></span>
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setSelectedCustomerTask(t)}
+                                            className="px-2.5 py-1 rounded-lg bg-yellow-400/10 hover:bg-yellow-400/20 text-yellow-300 text-[10px] font-bold font-mono transition-colors border border-yellow-400/20 flex items-center gap-1"
+                                        >
+                                            <Terminal className="w-3 h-3" />
+                                            <span>JSON View</span>
+                                        </button>
+                                    </div>
                                 </div>
                             );
                         })}
                     </div>
                     {myTasks.length === 0 && <p className="text-center text-xs text-stone-500 py-10">Abhi aapka koi kaam nahi. "Naya kaam" se shuru karo.</p>}
                 </section>
+            )}
+
+            {/* Customer Raw JSON Inspector Modal */}
+            {selectedCustomerTask && (
+                <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
+                    <div className="bg-stone-900 border border-white/10 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+                        <div className="p-4 border-b border-white/10 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <Database className="w-4 h-4 text-yellow-400" />
+                                <span className="text-xs font-bold text-white">Source Table: <code className="text-yellow-300">ai_studio_tasks</code> (Task #{selectedCustomerTask.id})</span>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setSelectedCustomerTask(null)}
+                                className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 text-stone-300 hover:text-white flex items-center justify-center transition-colors"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+                        <div className="p-4 overflow-y-auto space-y-3">
+                            <div className="flex items-center justify-between">
+                                <span className="text-[11px] text-stone-400">Raw JSON payload from database:</span>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        navigator.clipboard.writeText(JSON.stringify(selectedCustomerTask, null, 2));
+                                        setCopiedJson(true);
+                                        setTimeout(() => setCopiedJson(false), 2000);
+                                    }}
+                                    className="px-2.5 py-1 bg-yellow-400/10 hover:bg-yellow-400/20 text-yellow-300 rounded text-xs font-bold flex items-center gap-1 transition-colors"
+                                >
+                                    {copiedJson ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                                    <span>{copiedJson ? 'Copied!' : 'Copy JSON'}</span>
+                                </button>
+                            </div>
+                            <pre className="bg-stone-950 border border-white/10 rounded-xl p-3 text-xs font-mono text-emerald-300 overflow-x-auto max-h-96 select-text">
+                                <code>{JSON.stringify(selectedCustomerTask, null, 2)}</code>
+                            </pre>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );

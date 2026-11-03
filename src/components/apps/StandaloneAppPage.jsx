@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
     Smartphone, Search, Sparkles, ArrowLeft, ExternalLink, RefreshCw, 
-    Layers, Download, Image as ImageIcon, Terminal, Check, AlertCircle, Loader2 
+    Layers, Download, Image as ImageIcon, Terminal, Check, AlertCircle, Loader2,
+    MessageSquare, Database
 } from 'lucide-react';
 import { createClient } from '../../api/client';
 import { API_URL, API_KEY, API, TABLES, REFRESH_MS } from '../../api/config';
@@ -102,7 +103,7 @@ export function StandaloneAppPage({ defaultAppId }) {
     const loadTasksForApp = useCallback(async () => {
         try {
             const { data } = await sb.from(TABLES.TASKS)
-                .select('id,task_type,model,prompt,aspect_ratio,image_size,status,error,output_image_url,input_image_url,face_image_url,style_image_url,worker_id,app_id,created_at,finished_at,duration_ms,process_ms')
+                .select('id,task_type,model,prompt,aspect_ratio,image_size,status,error,output_text,output_image_url,output_image_urls,input_image_url,face_image_url,style_image_url,worker_id,app_id,user_id,batch_count,conversation_id,face_match_score,created_at,finished_at,duration_ms,process_ms')
                 .eq('app_id', appId)
                 .order('id', { ascending: false })
                 .limit(20);
@@ -539,9 +540,12 @@ export function StandaloneAppPage({ defaultAppId }) {
                                                         <span>View Photo</span>
                                                     </a>
                                                 ) : t.output_text ? (
-                                                    <span className="font-mono text-stone-300 line-clamp-1 max-w-[200px]" title={t.output_text}>
-                                                        {t.output_text}
-                                                    </span>
+                                                    <div className="flex items-center gap-1.5 text-stone-200">
+                                                        <MessageSquare className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                                        <span className="font-mono text-xs line-clamp-1 max-w-[200px]" title={t.output_text}>
+                                                            {t.output_text}
+                                                        </span>
+                                                    </div>
                                                 ) : (
                                                     <span className="text-stone-600">—</span>
                                                 )}
@@ -552,9 +556,10 @@ export function StandaloneAppPage({ defaultAppId }) {
                                                 <button
                                                     type="button"
                                                     onClick={() => setSelectedHistoryTask(t)}
-                                                    className="h-7 px-2.5 rounded-lg bg-white/5 hover:bg-white/10 text-stone-300 text-xs font-bold transition-colors"
+                                                    className="h-7 px-2.5 rounded-lg bg-amber-400/10 hover:bg-amber-400/20 text-amber-300 hover:text-amber-200 text-xs font-bold transition-colors border border-amber-400/20 inline-flex items-center gap-1"
                                                 >
-                                                    Inspect
+                                                    <Terminal className="w-3 h-3" />
+                                                    <span>Inspect JSON</span>
                                                 </button>
                                             </td>
                                         </tr>
