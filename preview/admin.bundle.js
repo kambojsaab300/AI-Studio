@@ -23995,11 +23995,86 @@ function setModelCaps(rows) {
 
 // src/context/AdminContext.jsx
 var AdminContext = (0, import_react.createContext)(null);
+function parseJwt(token) {
+  try {
+    if (!token)
+      return null;
+    const parts = token.split(".");
+    if (parts.length < 2)
+      return null;
+    const base64Url = parts[1];
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+    const jsonPayload = decodeURIComponent(
+      atob(base64).split("").map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2)).join("")
+    );
+    return JSON.parse(jsonPayload);
+  } catch {
+    return null;
+  }
+}
+function getStoredAuthState() {
+  try {
+    const token = localStorage.getItem("aistudio_token");
+    const userStr = localStorage.getItem("aistudio_user");
+    if (!token)
+      return { session: null, isAdmin: false, user: null };
+    const payload = parseJwt(token);
+    if (payload && payload.exp && Date.now() >= payload.exp * 1e3) {
+      localStorage.removeItem("aistudio_token");
+      localStorage.removeItem("aistudio_user");
+      return { session: null, isAdmin: false, user: null };
+    }
+    let user = null;
+    if (userStr) {
+      try {
+        user = JSON.parse(userStr);
+      } catch {
+      }
+    }
+    if (!user && payload) {
+      user = {
+        id: payload.sub || payload.nameid,
+        email: payload.email,
+        role: payload.role
+      };
+    }
+    const isAdmin = user?.role === "admin" || user?.is_admin === true || payload?.role === "admin" || payload?.is_admin === "true";
+    return {
+      session: token ? { access_token: token, user } : null,
+      isAdmin: !!isAdmin,
+      user
+    };
+  } catch {
+    return { session: null, isAdmin: false, user: null };
+  }
+}
 function AdminProvider({ children }) {
-  const [sb, setSb] = (0, import_react.useState)(null);
-  const [session, setSession] = (0, import_react.useState)(null);
-  const [isAdmin, setIsAdmin] = (0, import_react.useState)(false);
-  const [screen, setScreen] = (0, import_react.useState)("task");
+  const initialAuth = (0, import_react.useRef)(getStoredAuthState()).current;
+  const [sb, setSb] = (0, import_react.useState)(() => createClient(API_URL, API_KEY));
+  const [session, setSession] = (0, import_react.useState)(initialAuth.session);
+  const [isAdmin, setIsAdmin] = (0, import_react.useState)(initialAuth.isAdmin);
+  const [authLoading, setAuthLoading] = (0, import_react.useState)(false);
+  const [screen, setScreenState] = (0, import_react.useState)(() => {
+    try {
+      const hash = window.location.hash.replace("#", "");
+      const valid = ["task", "apps", "builder", "tools", "workers", "features"];
+      if (valid.includes(hash))
+        return hash;
+      const saved = localStorage.getItem("aistudio_admin_screen");
+      if (saved && valid.includes(saved))
+        return saved;
+    } catch {
+    }
+    return "task";
+  });
+  const setScreen = (0, import_react.useCallback)((newScreen) => {
+    setScreenState(newScreen);
+    try {
+      localStorage.setItem("aistudio_admin_screen", newScreen);
+      window.location.hash = newScreen;
+    } catch {
+    }
+  }, []);
   const [msg, setMsg] = (0, import_react.useState)("");
   const [catalog, setCatalog] = (0, import_react.useState)([]);
   const [apps, setApps] = (0, import_react.useState)([]);
@@ -24013,25 +24088,35 @@ function AdminProvider({ children }) {
   const screenRef = (0, import_react.useRef)(screen);
   screenRef.current = screen;
   (0, import_react.useEffect)(() => {
-    const client = createClient(API_URL, API_KEY);
-    setSb(client);
-    client.auth.getSession().then(({ data }) => {
-      setSession(data?.session || null);
-    });
+    const client = sb || createClient(API_URL, API_KEY);
+    if (!sb)
+      setSb(client);
     const { data: sub } = client.auth.onAuthStateChange((_event, sess) => {
-      setSession(sess || null);
+      if (sess) {
+        const stored = getStoredAuthState();
+        setSession(sess);
+        setIsAdmin(stored.isAdmin);
+        setAuthLoading(false);
+      } else {
+        setSession(null);
+        setIsAdmin(false);
+        setAuthLoading(false);
+      }
     });
-    return () => sub?.subscription?.unsubscribe();
-  }, []);
-  (0, import_react.useEffect)(() => {
-    if (!sb || !session) {
-      setIsAdmin(false);
-      return;
+    if (initialAuth.session) {
+      client.rpc(API.IS_ADMIN).then(({ data, error }) => {
+        if (error || !data) {
+          client.auth.signOut();
+          setIsAdmin(false);
+          setSession(null);
+        } else {
+          setIsAdmin(true);
+        }
+      }).catch(() => {
+      });
     }
-    sb.rpc(API.IS_ADMIN).then(({ data, error }) => {
-      setIsAdmin(!error && !!data);
-    });
-  }, [sb, session]);
+    return () => sub?.subscription?.unsubscribe();
+  }, [sb]);
   const loadCatalog = (0, import_react.useCallback)(async () => {
     if (!sb || !isAdmin)
       return;
@@ -24128,6 +24213,7 @@ function AdminProvider({ children }) {
     session,
     email: session?.user?.email || "admin@aistudio.local",
     isAdmin,
+    authLoading,
     screen,
     setScreen,
     msg,
@@ -27808,7 +27894,10 @@ function LoginScreen() {
 
 // src/AdminApp.jsx
 function AdminContent() {
-  const { session, isAdmin, screen, msg, setMsg } = useAdmin();
+  const { session, isAdmin, authLoading, screen, msg, setMsg } = useAdmin();
+  if (authLoading) {
+    return /* @__PURE__ */ import_react33.default.createElement("div", { className: "min-h-screen bg-[#07080d] flex flex-col items-center justify-center p-4" }, /* @__PURE__ */ import_react33.default.createElement("div", { className: "flex flex-col items-center gap-3 animate-pulse" }, /* @__PURE__ */ import_react33.default.createElement("div", { className: "w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-400 to-amber-200 flex items-center justify-center shadow-lg shadow-amber-400/20" }, /* @__PURE__ */ import_react33.default.createElement(Shield, { className: "w-6 h-6 text-slate-950 font-black" })), /* @__PURE__ */ import_react33.default.createElement("span", { className: "text-xs font-mono font-bold text-slate-400 tracking-wider" }, "AI STUDIO ADMIN")));
+  }
   if (!session || !isAdmin) {
     return /* @__PURE__ */ import_react33.default.createElement(LoginScreen, null);
   }

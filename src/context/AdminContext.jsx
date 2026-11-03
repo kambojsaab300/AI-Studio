@@ -6,11 +6,90 @@ import { setModelCaps } from '../constants/models';
 
 const AdminContext = createContext(null);
 
+function parseJwt(token) {
+    try {
+        if (!token) return null;
+        const parts = token.split('.');
+        if (parts.length < 2) return null;
+        const base64Url = parts[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const jsonPayload = decodeURIComponent(
+            atob(base64)
+                .split('')
+                .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+                .join('')
+        );
+        return JSON.parse(jsonPayload);
+    } catch {
+        return null;
+    }
+}
+
+function getStoredAuthState() {
+    try {
+        const token = localStorage.getItem('aistudio_token');
+        const userStr = localStorage.getItem('aistudio_user');
+        if (!token) return { session: null, isAdmin: false, user: null };
+
+        const payload = parseJwt(token);
+        // If JWT has expired, remove tokens and return logged out
+        if (payload && payload.exp && Date.now() >= payload.exp * 1000) {
+            localStorage.removeItem('aistudio_token');
+            localStorage.removeItem('aistudio_user');
+            return { session: null, isAdmin: false, user: null };
+        }
+
+        let user = null;
+        if (userStr) {
+            try { user = JSON.parse(userStr); } catch {}
+        }
+        if (!user && payload) {
+            user = {
+                id: payload.sub || payload.nameid,
+                email: payload.email,
+                role: payload.role
+            };
+        }
+
+        const isAdmin = user?.role === 'admin' || user?.is_admin === true || payload?.role === 'admin' || payload?.is_admin === 'true';
+
+        return {
+            session: token ? { access_token: token, user } : null,
+            isAdmin: !!isAdmin,
+            user
+        };
+    } catch {
+        return { session: null, isAdmin: false, user: null };
+    }
+}
+
 export function AdminProvider({ children }) {
-    const [sb, setSb] = useState(null);
-    const [session, setSession] = useState(null);
-    const [isAdmin, setIsAdmin] = useState(false);
-    const [screen, setScreen] = useState('task'); // 'task' | 'builder' | 'tools' | 'workers' | 'features'
+    const initialAuth = useRef(getStoredAuthState()).current;
+    const [sb, setSb] = useState(() => createClient(API_URL, API_KEY));
+    const [session, setSession] = useState(initialAuth.session);
+    const [isAdmin, setIsAdmin] = useState(initialAuth.isAdmin);
+    const [authLoading, setAuthLoading] = useState(false);
+
+    // Persist and restore active screen tab on reload without resetting to studio
+    const [screen, setScreenState] = useState(() => {
+        try {
+            const hash = window.location.hash.replace('#', '');
+            const valid = ['task', 'apps', 'builder', 'tools', 'workers', 'features'];
+            if (valid.includes(hash)) return hash;
+            const saved = localStorage.getItem('aistudio_admin_screen');
+            if (saved && valid.includes(saved)) return saved;
+        } catch {}
+        return 'task';
+    });
+
+    const setScreen = useCallback((newScreen) => {
+        setScreenState(newScreen);
+        try {
+            localStorage.setItem('aistudio_admin_screen', newScreen);
+            window.location.hash = newScreen;
+        } catch {}
+    }, []);
+
     const [msg, setMsg] = useState('');
 
     // Database state
@@ -29,30 +108,37 @@ export function AdminProvider({ children }) {
 
     // 1. Initialize client and listen to auth changes
     useEffect(() => {
-        const client = createClient(API_URL, API_KEY);
-        setSb(client);
-
-        client.auth.getSession().then(({ data }) => {
-            setSession(data?.session || null);
-        });
+        const client = sb || createClient(API_URL, API_KEY);
+        if (!sb) setSb(client);
 
         const { data: sub } = client.auth.onAuthStateChange((_event, sess) => {
-            setSession(sess || null);
+            if (sess) {
+                const stored = getStoredAuthState();
+                setSession(sess);
+                setIsAdmin(stored.isAdmin);
+                setAuthLoading(false);
+            } else {
+                setSession(null);
+                setIsAdmin(false);
+                setAuthLoading(false);
+            }
         });
+
+        // Background server verification of JWT token with is_admin endpoint
+        if (initialAuth.session) {
+            client.rpc(API.IS_ADMIN).then(({ data, error }) => {
+                if (error || !data) {
+                    client.auth.signOut();
+                    setIsAdmin(false);
+                    setSession(null);
+                } else {
+                    setIsAdmin(true);
+                }
+            }).catch(() => {});
+        }
 
         return () => sub?.subscription?.unsubscribe();
-    }, []);
-
-    // 2. Check Admin role
-    useEffect(() => {
-        if (!sb || !session) {
-            setIsAdmin(false);
-            return;
-        }
-        sb.rpc(API.IS_ADMIN).then(({ data, error }) => {
-            setIsAdmin(!error && !!data);
-        });
-    }, [sb, session]);
+    }, [sb]);
 
     // 3. Load Catalog & Task Types
     const loadCatalog = useCallback(async () => {
@@ -151,6 +237,7 @@ export function AdminProvider({ children }) {
         session,
         email: session?.user?.email || 'admin@aistudio.local',
         isAdmin,
+        authLoading,
         screen,
         setScreen,
         msg,
