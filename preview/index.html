@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Studio • Platform Hub</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+                        mono: ['"JetBrains Mono"', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+            background-color: #07080d;
+            color: #f1f5f9;
+        }
+    </style>
+</head>
+<body class="bg-[#07080d] text-slate-100 min-h-screen flex items-center justify-center p-4 sm:p-6 antialiased selection:bg-amber-400 selection:text-black">
+    <div class="max-w-xl w-full bg-[#0e1320] border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
+        <div class="text-center space-y-2">
+            <span class="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-400/10 text-amber-300 border border-amber-400/20 rounded-full text-xs font-mono font-bold">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                AI Studio Production Suite
+            </span>
+            <h1 class="text-2xl sm:text-3xl font-black tracking-tight text-white">Select Application Portal</h1>
+            <p class="text-slate-400 text-xs sm:text-sm">Choose which portal or client workspace you want to launch</p>
+        </div>
+
+        <!-- Portals Grid -->
+        <div class="space-y-3">
+            <!-- 1. Dedicated Client Apps (WearGen, PPP, etc.) -->
+            <a href="/app/weargen" class="block p-4 sm:p-5 rounded-2xl border border-amber-400/30 bg-gradient-to-r from-amber-400/10 via-[#0a0d17] to-[#0a0d17] hover:border-amber-400 hover:from-amber-400/20 transition-all group shadow-lg">
+                <div class="flex items-center justify-between">
+                    <div class="space-y-1">
+                        <div class="flex items-center gap-2">
+                            <span class="text-lg">👗</span>
+                            <span class="font-extrabold text-sm sm:text-base text-white group-hover:text-amber-300 transition-colors">WearGen Client Workspace</span>
+                            <span class="text-[10px] font-mono bg-amber-400/20 text-amber-300 border border-amber-400/30 px-2 py-0.5 rounded-full font-bold">App Portal</span>
+                        </div>
+                        <p class="text-xs text-slate-400">Launch dedicated client workspace with assigned AI fashion & generation tools</p>
+                    </div>
+                    <span class="text-amber-400 text-xl font-bold transition-transform group-hover:translate-x-1 ml-3">→</span>
+                </div>
+            </a>
+
+            <!-- 2. Master Admin Portal -->
+            <a href="/admin" class="block p-4 sm:p-5 rounded-2xl border border-slate-800 bg-[#080b12] hover:border-slate-700 hover:bg-[#0c101b] transition-all group shadow-lg">
+                <div class="flex items-center justify-between">
+                    <div class="space-y-1">
+                        <div class="flex items-center gap-2">
+                            <span class="text-lg">⚡</span>
+                            <span class="font-extrabold text-sm sm:text-base text-white group-hover:text-amber-300 transition-colors">Master Admin Suite</span>
+                            <span class="text-[10px] font-mono bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded-full font-bold">Admin</span>
+                        </div>
+                        <p class="text-xs text-slate-400">Complete AI Studio manager: Tool Builder, App Matrix, Live Workers & Task History</p>
+                    </div>
+                    <span class="text-slate-500 group-hover:text-white text-xl font-bold transition-transform group-hover:translate-x-1 ml-3">→</span>
+                </div>
+            </a>
+
+            <!-- 3. Customer Photo Studio -->
+            <a href="/customer" class="block p-4 sm:p-5 rounded-2xl border border-slate-800 bg-[#080b12] hover:border-slate-700 hover:bg-[#0c101b] transition-all group shadow-lg">
+                <div class="flex items-center justify-between">
+                    <div class="space-y-1">
+                        <div class="flex items-center gap-2">
+                            <span class="text-lg">📸</span>
+                            <span class="font-extrabold text-sm sm:text-base text-white group-hover:text-amber-300 transition-colors">Customer Photo Studio</span>
+                            <span class="text-[10px] font-mono bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded-full font-bold">Studio</span>
+                        </div>
+                        <p class="text-xs text-slate-400">Choose features, upload photos, prompt AI and download generated results</p>
+                    </div>
+                    <span class="text-slate-500 group-hover:text-white text-xl font-bold transition-transform group-hover:translate-x-1 ml-3">→</span>
+                </div>
+            </a>
+        </div>
+
+        <div class="pt-2 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-500 font-mono">
+            <span>Live API: https://aistudio.runasp.net</span>
+            <a href="/swagger" class="hover:text-amber-400 transition-colors">API Docs (Swagger) ↗</a>
+        </div>
+    </div>
+</body>
+</html>

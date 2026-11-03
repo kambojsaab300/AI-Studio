@@ -2,16 +2,314 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { RefreshCw, AlertCircle, CheckCircle2, Cpu, Image as ImageIcon } from 'lucide-react';
 
 // ============================================================
+// AI Studio: .NET Core API Client (Standalone Inline Adapter)
+// Powered by .NET Core Web API & Microsoft SQL Server
+// ============================================================
+class ApiQueryBuilder {
+    constructor(apiUrl, table, token) {
+        this.apiUrl = apiUrl;
+        this.table = table;
+        this.token = token;
+        this.params = new URLSearchParams();
+        this._isSingle = false;
+        this._isCount = false;
+        this._isHead = false;
+    }
+
+    select(columns = '*', options = {}) {
+        this.params.set('select', columns);
+        if (options && options.count) {
+            this._isCount = true;
+            this.params.set('count', options.count);
+        }
+        if (options && options.head) {
+            this._isHead = true;
+            this.params.set('head', 'true');
+        }
+        return this;
+    }
+
+    order(column, { ascending = true } = {}) {
+        this.params.set('order', `${column}.${ascending ? 'asc' : 'desc'}`);
+        return this;
+    }
+
+    limit(n) {
+        this.params.set('limit', String(n));
+        return this;
+    }
+
+    range(from, to) {
+        this.params.set('offset', String(from));
+        this.params.set('limit', String(to - from + 1));
+        return this;
+    }
+
+    eq(column, value) {
+        this.params.append(column, `eq.${value}`);
+        return this;
+    }
+
+    neq(column, value) {
+        this.params.append(column, `neq.${value}`);
+        return this;
+    }
+
+    is(column, value) {
+        this.params.append(column, `is.${value}`);
+        return this;
+    }
+
+    in(column, values) {
+        const list = Array.isArray(values) ? values.join(',') : values;
+        this.params.append(column, `in.(${list})`);
+        return this;
+    }
+
+    single() {
+        this._isSingle = true;
+        return this;
+    }
+
+    async _fetch(url, options = {}) {
+        const headers = {
+            'Content-Type': 'application/json',
+            'Bypass-Tunnel-Reminder': 'true',
+            ...(this.token ? { 'Authorization': `Bearer ${this.token}` } : {})
+        };
+        if (this._isSingle) {
+            headers['Accept'] = 'application/vnd.pgrst.object+json';
+        }
+
+        try {
+            const res = await fetch(url, { ...options, headers });
+            let countVal = 0;
+            const contentRange = res.headers.get('content-range') || res.headers.get('Content-Range');
+            if (contentRange) {
+                const parts = contentRange.split('/');
+                if (parts.length > 1) countVal = parseInt(parts[1], 10) || 0;
+            } else {
+                const totalHdr = res.headers.get('x-total-count') || res.headers.get('X-Total-Count');
+                if (totalHdr) countVal = parseInt(totalHdr, 10) || 0;
+            }
+
+            if (!res.ok) {
+                const text = await res.text();
+                let errObj;
+                try { errObj = JSON.parse(text); } catch { errObj = { message: text }; }
+                return { data: null, error: errObj, count: 0 };
+            }
+
+            const data = await res.json();
+            if (countVal === 0 && Array.isArray(data)) countVal = data.length;
+
+            return {
+                data: this._isSingle && Array.isArray(data) ? (data[0] || null) : data,
+                error: null,
+                count: countVal
+            };
+        } catch (err) {
+            return { data: null, error: { message: err.message }, count: 0 };
+        }
+    }
+
+    then(resolve, reject) {
+        const url = `${this.apiUrl}/rest/v1/${this.table}?${this.params.toString()}`;
+        return this._fetch(url, { method: 'GET' }).then(resolve, reject);
+    }
+
+    async insert(data) {
+        const url = `${this.apiUrl}/rest/v1/${this.table}`;
+        return this._fetch(url, { method: 'POST', body: JSON.stringify(data) });
+    }
+
+    async update(data) {
+        const url = `${this.apiUrl}/rest/v1/${this.table}?${this.params.toString()}`;
+        return this._fetch(url, { method: 'PATCH', body: JSON.stringify(data) });
+    }
+
+    async delete() {
+        const url = `${this.apiUrl}/rest/v1/${this.table}?${this.params.toString()}`;
+        return this._fetch(url, { method: 'DELETE' });
+    }
+}
+
+function getEffectiveApiUrl(providedUrl) {
+    if (typeof window !== 'undefined') {
+        const queryApi = new URLSearchParams(window.location.search).get('api');
+        if (queryApi) {
+            try { localStorage.setItem('aistudio_api_url', queryApi); } catch { }
+            return queryApi.replace(/\/$/, "");
+        }
+        try {
+            const savedApi = localStorage.getItem('aistudio_api_url');
+            if (savedApi) {
+                if (savedApi.includes('trycloudflare.com')) {
+                    try { localStorage.removeItem('aistudio_api_url'); } catch { }
+                } else {
+                    return (savedApi === 'http://aistudio.runasp.net' ? 'https://aistudio.runasp.net' : savedApi).replace(/\/$/, "");
+                }
+            }
+        } catch { }
+        if (providedUrl) {
+            return providedUrl.replace(/\/$/, "");
+        }
+    }
+    return (providedUrl || "https://aistudio.runasp.net").replace(/\/$/, "");
+}
+
+function createClient(apiUrl = "https://aistudio.runasp.net", apiKey = "") {
+    const url = getEffectiveApiUrl(apiUrl);
+    let token = "";
+    let currentUser = null;
+    try {
+        token = localStorage.getItem('aistudio_token') || "";
+        const saved = localStorage.getItem('aistudio_user');
+        if (saved) currentUser = JSON.parse(saved);
+    } catch { }
+
+    const authListeners = new Set();
+
+    return {
+        apiUrl: url,
+        auth: {
+            async signInWithPassword({ email, password }) {
+                try {
+                    const res = await fetch(`${url}/api/auth/login`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Bypass-Tunnel-Reminder': 'true' },
+                        body: JSON.stringify({ email, password })
+                    });
+                    const json = await res.json();
+                    if (!res.ok) return { data: null, error: { message: json.error || 'Login fail hua.' } };
+                    token = json.access_token;
+                    currentUser = json.user;
+                    try {
+                        localStorage.setItem('aistudio_token', token);
+                        localStorage.setItem('aistudio_user', JSON.stringify(currentUser));
+                    } catch { }
+                    authListeners.forEach(cb => cb('SIGNED_IN', { user: currentUser, access_token: token }));
+                    return { data: { user: currentUser, session: { access_token: token, user: currentUser } }, error: null };
+                } catch (err) {
+                    return { data: null, error: { message: err.message } };
+                }
+            },
+
+            async signInAnonymously() {
+                const guestEmail = `guest_${Date.now()}@aistudio.local`;
+                return this.signUp({ email: guestEmail, password: "Guest@123456" });
+            },
+
+            async signUp({ email, password }) {
+                try {
+                    const res = await fetch(`${url}/api/auth/signup`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Bypass-Tunnel-Reminder': 'true' },
+                        body: JSON.stringify({ email, password })
+                    });
+                    const json = await res.json();
+                    if (!res.ok) return { data: null, error: { message: json.error || 'Signup fail hua.' } };
+                    token = json.access_token;
+                    currentUser = json.user;
+                    try {
+                        localStorage.setItem('aistudio_token', token);
+                        localStorage.setItem('aistudio_user', JSON.stringify(currentUser));
+                    } catch { }
+                    authListeners.forEach(cb => cb('SIGNED_IN', { user: currentUser, access_token: token }));
+                    return { data: { user: currentUser, session: { access_token: token, user: currentUser } }, error: null };
+                } catch (err) {
+                    return { data: null, error: { message: err.message } };
+                }
+            },
+
+            async signOut() {
+                token = "";
+                currentUser = null;
+                try {
+                    localStorage.removeItem('aistudio_token');
+                    localStorage.removeItem('aistudio_user');
+                } catch { }
+                authListeners.forEach(cb => cb('SIGNED_OUT', null));
+                return { error: null };
+            },
+
+            async getSession() {
+                if (token && currentUser) return { data: { session: { access_token: token, user: currentUser } }, error: null };
+                return { data: { session: null }, error: null };
+            },
+
+            async getUser() {
+                return { data: { user: currentUser }, error: null };
+            },
+
+            onAuthStateChange(callback) {
+                authListeners.add(callback);
+                return {
+                    data: {
+                        subscription: {
+                            unsubscribe: () => authListeners.delete(callback)
+                        }
+                    }
+                };
+            }
+        },
+
+        from(table) {
+            return new ApiQueryBuilder(url, table, token);
+        },
+
+        async rpc(functionName, params = {}) {
+            try {
+                const res = await fetch(`${url}/rest/v1/rpc/${functionName}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Bypass-Tunnel-Reminder': 'true',
+                        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                    },
+                    body: JSON.stringify(params || {})
+                });
+
+                const text = await res.text();
+                if (!res.ok) {
+                    let errObj;
+                    try { errObj = JSON.parse(text); } catch { errObj = { message: text }; }
+                    return { data: null, error: errObj };
+                }
+
+                let data;
+                try { data = JSON.parse(text); } catch { data = text; }
+                return { data, error: null };
+            } catch (err) {
+                return { data: null, error: { message: err.message } };
+            }
+        },
+
+        channel(name) {
+            const ch = {
+                name,
+                on() { return ch; },
+                subscribe() { return ch; }
+            };
+            return ch;
+        },
+
+        removeChannel() { }
+    };
+}
+
+// ============================================================
 // AI STUDIO WORKER: picks tasks, calls the model, uploads photos (ImgBB + Cloudinary), saves the result.
 // Limits come from the ai_studio_settings table, so they can be changed while the worker runs.
+// Powered by .NET Core Web API & Microsoft SQL Server
 // ============================================================
 
 // ── Config ──
-const SUPABASE_URL = "https://kdwkdhjtcebrhtokhirg.supabase.co";
+const API_URL = "https://aistudio.runasp.net";
 // Realtime (instant updates). The blob: preview (Canvas) does not allow WebSockets, so there the timers do the work.
 const USE_REALTIME = location.protocol !== 'blob:';
 // Publishable key: safe in the app code (row security protects the data)
-const SUPABASE_KEY = "sb_publishable_lRLDmrcgSfw7RNL5FtzFdg_3N_rWS8r";
+const API_KEY = "aistudio_worker_local_key";
 
 // Repeats fn. The delay is read again after every run, so a new value from the database is used at once.
 function everyMs(fn, delayOf) {
@@ -36,8 +334,8 @@ let RUNTIME = {
     gemini_base: 'https://generativelanguage.googleapis.com/v1beta/models',
     imgbb_upload_url: 'https://api.imgbb.com/1/upload',
     stale_ms: 10 * 60 * 1000,     // a stuck task older than this can be picked again
-    heartbeat_ms: 30000,          // "I am alive" every 30 s (and reads the paused flag)
-    fallback_ms: 10000,           // safety-net check every 10 s (realtime does the rest)
+    heartbeat_ms: 5000,           // "I am alive" every 5 s (and reads the paused flag)
+    fallback_ms: 2000,            // polls & fetches new tasks from DB every 2 s!
     image_max_side: 2048,
     image_quality: 0.85,
     model_caps: {}                // filled from ai_studio_models (kind, label, aspects, sizes)
@@ -50,8 +348,8 @@ function applyRuntime(d) {
         gemini_base: d.gemini_base || RUNTIME.gemini_base,
         imgbb_upload_url: d.imgbb_upload_url || RUNTIME.imgbb_upload_url,
         stale_ms: (d.stale_min ?? 10) * 60 * 1000,
-        heartbeat_ms: (d.heartbeat_sec ?? 30) * 1000,
-        fallback_ms: (d.fallback_sec ?? 10) * 1000,
+        heartbeat_ms: (d.heartbeat_sec ?? 5) * 1000,
+        fallback_ms: (d.fallback_sec ?? 2) * 1000,
         image_max_side: d.image_max_side ?? RUNTIME.image_max_side,
         image_quality: d.image_quality ?? RUNTIME.image_quality,
         model_caps: d.model_caps || RUNTIME.model_caps
@@ -59,7 +357,7 @@ function applyRuntime(d) {
 }
 
 // Used until the settings table is read. Same values as the table defaults.
-const DEFAULT_SETTINGS = { task_concurrency: 20, gemini_concurrency: 8, photos_per_task_max: 10, max_attempts: 2, retry_delay_sec: 30, task_timeout_sec: 300, budget_left: null, disabled_models: [], cloudinary_enabled: true, cloudinary_cloud_name: 'draaqjcre', cloudinary_upload_preset: 'ml_default', imgbb_enabled: false, imgbb_api_key: '' };
+const DEFAULT_SETTINGS = { task_concurrency: 20, gemini_concurrency: 8, photos_per_task_max: 50, max_attempts: 2, retry_delay_sec: 30, task_timeout_sec: 300, budget_left: null, disabled_models: [], cloudinary_enabled: true, cloudinary_cloud_name: 'draaqjcre', cloudinary_upload_preset: 'ml_default', imgbb_enabled: false, imgbb_api_key: '', worker_recycle_after_tasks: 50 };
 
 // ── API: every call the app makes, named in one place ──
 // Database functions (sb.rpc)
@@ -134,20 +432,7 @@ const STATUS_STYLE = {
 };
 
 // ── Helpers ──
-let supabaseLoading = null;
-const loadSupabase = () => {
-    if (window.supabase) return Promise.resolve(window.supabase);
-    if (!supabaseLoading) {
-        supabaseLoading = new Promise((resolve, reject) => {
-            const s = document.createElement('script');
-            s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
-            s.onload = () => resolve(window.supabase);
-            s.onerror = () => reject(new Error('Supabase script load failed'));
-            document.head.appendChild(s);
-        });
-    }
-    return supabaseLoading;
-};
+const loadApiClient = () => Promise.resolve({ createClient });
 
 // Limiter: runs at most `max` jobs at once. `max` can be a number or a function, so a settings change applies.
 const createLimiter = (max) => {
@@ -166,8 +451,57 @@ const createLimiter = (max) => {
 // Image URL -> base64 (no prefix)
 // Photos already downloaded (URL -> base64). Keeps the last 60, so the same photo is not downloaded again.
 const inputCache = new Map();
+
+// Task-specific cache cleaner: deletes input, face, style and extra images from memory
+function cleanTaskCache(task) {
+    if (!task) return;
+    const urls = [
+        task.input_image_url,
+        task.face_image_url,
+        task.style_image_url,
+        ...(task.extra_image_urls || [])
+    ].filter(Boolean);
+    for (const u of urls) {
+        inputCache.delete(u);
+    }
+}
+
+// Complete memory purge: clears all cached images and triggers browser GC if exposed
+function purgeAllMemory() {
+    inputCache.clear();
+    if (typeof window !== 'undefined' && window.gc) {
+        try { window.gc(); } catch {}
+    }
+}
+
+// Live memory usage reader (JS Heap in MB)
+function getMemoryStats() {
+    if (typeof window !== 'undefined' && window.performance && window.performance.memory) {
+        const { usedJSHeapSize, totalJSHeapSize, jsHeapSizeLimit } = window.performance.memory;
+        return {
+            usedMB: Math.round(usedJSHeapSize / (1024 * 1024)),
+            totalMB: Math.round(totalJSHeapSize / (1024 * 1024)),
+            limitMB: Math.round(jsHeapSizeLimit / (1024 * 1024)),
+            supported: true
+        };
+    }
+    return {
+        usedMB: 0,
+        totalMB: 0,
+        limitMB: 0,
+        cacheCount: inputCache.size,
+        supported: false
+    };
+}
 async function urlToBase64(url) {
+    if (!url) return '';
     if (inputCache.has(url)) return inputCache.get(url);
+    if (typeof url === 'string' && url.startsWith('data:')) {
+        const parts = url.split(',');
+        const b64 = parts[1] || parts[0];
+        inputCache.set(url, b64);
+        return b64;
+    }
     const blob = await (await fetch(url)).blob();
     const b64 = await new Promise((resolve, reject) => {
         const r = new FileReader();
@@ -176,7 +510,7 @@ async function urlToBase64(url) {
         r.readAsDataURL(blob);
     });
     inputCache.set(url, b64);
-    if (inputCache.size > 60) inputCache.delete(inputCache.keys().next().value);
+    if (inputCache.size > 20) inputCache.delete(inputCache.keys().next().value);
     return b64;
 }
 
@@ -259,7 +593,11 @@ async function compositeEdit(photoB64, maskB64, generatedDataUrl) {
         c.height = h;
         const x = c.getContext('2d', { willReadFrequently: true });
         x.drawImage(img, 0, 0, w, h);
-        return x.getImageData(0, 0, w, h).data;
+        const data = x.getImageData(0, 0, w, h).data;
+        c.width = 0;
+        c.height = 0;
+        img.src = '';
+        return data;
     };
     const orig = pixelsOf(photo);
     const edited = pixelsOf(gen);
@@ -275,7 +613,10 @@ async function compositeEdit(photoB64, maskB64, generatedDataUrl) {
     c.width = w;
     c.height = h;
     c.getContext('2d').putImageData(out, 0, 0);
-    return c.toDataURL('image/jpeg', 0.92);
+    const result = c.toDataURL('image/jpeg', 0.92);
+    c.width = 0;
+    c.height = 0;
+    return result;
 }
 
 // ── Smaller pictures: at most 2048 px on the long side, saved as JPEG (safe to store, much less space) ──
@@ -289,7 +630,11 @@ async function shrinkDataUrl(dataUrl) {
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, c.width, c.height);
     ctx.drawImage(img, 0, 0, c.width, c.height);
-    return c.toDataURL('image/jpeg', RUNTIME.image_quality);
+    const result = c.toDataURL('image/jpeg', RUNTIME.image_quality);
+    c.width = 0;
+    c.height = 0;
+    img.src = '';
+    return result;
 }
 
 // ── Transparent output: pure white becomes transparent, soft edges become partly see-through ──
@@ -309,13 +654,21 @@ async function knockoutWhite(dataUrl) {
         else if (min >= 215) px.data[i + 3] = Math.round((240 - min) / 25 * 255);
     }
     ctx.putImageData(px, 0, 0);
-    return c.toDataURL('image/png');
+    const result = c.toDataURL('image/png');
+    c.width = 0;
+    c.height = 0;
+    img.src = '';
+    return result;
 }
 
 // ── Model call: one function for every task type ──
 // Returns { text } for text tasks, or { image: { dataUrl, mimeType } } for image tasks.
 async function callAiStudio(task, inputs, apiKey, promptRow) {
-    const type = TASK_TYPES[task.task_type];
+    let type = TASK_TYPES[task.task_type];
+    if (!type && sbRef.current) {
+        await loadSettings(sbRef.current);
+        type = TASK_TYPES[task.task_type];
+    }
     if (!type) throw new Error(`Task type galat hai: ${task.task_type}`);
     const isImage = type.output === 'image';
 
@@ -418,7 +771,8 @@ const withTimeout = (promise, ms) => new Promise((resolve, reject) => {
 });
 
 export default function AiStudioWorker() {
-    const [supabaseKey, setSupabaseKey] = useState(SUPABASE_KEY);
+    const [apiKey, setApiKey] = useState(API_KEY);
+    const [customApiUrl, setCustomApiUrl] = useState(() => getEffectiveApiUrl(API_URL));
     // Reads the browser key (gemini_api_key). An older save under ai_studio_api_key is used too if it is the only one.
     const [aiStudioKey, setAiStudioKey] = useState(() => {
         const first = (localStorage.getItem(GEMINI_KEY_STORAGE) || '').trim();
@@ -444,7 +798,55 @@ export default function AiStudioWorker() {
     const [settings, setSettings] = useState(DEFAULT_SETTINGS);
     const [myTasks, setMyTasks] = useState([]);
     const [logs, setLogs] = useState([]);
+    const MAX_LOGS = 30; // 30 records hone par pura log automatic clear/reset ho jayega
+    const log = useCallback((text) => {
+        setLogs(prev => {
+            if (prev.length >= MAX_LOGS) {
+                // 30 records pure hone par screen se purane logs clear karke fresh start
+                return [
+                    { t: new Date().toLocaleTimeString(), text },
+                    { t: new Date().toLocaleTimeString(), text: '⚡ [Auto-Clear] 30 logs limit reached: Screen logs reset ho gaye' }
+                ];
+            }
+            return [{ t: new Date().toLocaleTimeString(), text }, ...prev];
+        });
+    }, []);
+
+    // Auto-clear watcher: jaise hi 30 logs reach hote hain, screen 1.5s me auto-clean ho jayegi
+    useEffect(() => {
+        if (logs.length >= 30) {
+            const timer = setTimeout(() => {
+                setLogs([
+                    { t: new Date().toLocaleTimeString(), text: '⚡ [Auto-Clear] 30 logs pure ho gaye: Screen logs auto-clear ho gaye' }
+                ]);
+            }, 1500);
+            return () => clearTimeout(timer);
+        }
+    }, [logs.length]);
     const [running, setRunning] = useState(0);
+    const [refreshIntervalSec, setRefreshIntervalSec] = useState(() => Math.round(RUNTIME.fallback_ms / 1000) || 2);
+    const [nextDbSec, setNextDbSec] = useState(() => Math.round(RUNTIME.fallback_ms / 1000) || 2);
+    const [lastDbFetch, setLastDbFetch] = useState('');
+    const [memStats, setMemStats] = useState(() => getMemoryStats());
+
+    // Live Memory monitor & auto-cleanup (runs every 3 seconds)
+    useEffect(() => {
+        const checkMemory = () => {
+            const stats = getMemoryStats();
+            setMemStats(stats);
+            // If used JS Heap is above 150 MB or cache has > 20 items, auto-clean
+            if ((stats.supported && stats.usedMB > 150) || inputCache.size > 20) {
+                const countBefore = inputCache.size;
+                const ramBefore = stats.usedMB;
+                purgeAllMemory();
+                const newStats = getMemoryStats();
+                setMemStats(newStats);
+                log(`[Auto-RAM Purge] RAM ${ramBefore}MB high tha. Caches saaf hue (${countBefore} items). RAM ab: ${newStats.usedMB || 'OK'}MB`);
+            }
+        };
+        const timer = setInterval(checkMemory, 3000);
+        return () => clearInterval(timer);
+    }, [log]);
 
     // Refs so the timers, limiters and realtime handlers always see the latest values
     const sbRef = useRef(null);
@@ -452,21 +854,31 @@ export default function AiStudioWorker() {
     const pausedRef = useRef(false);
     const drainRef = useRef(false);
     const failStreakRef = useRef(0);
+    const sessionTasksDoneRef = useRef(0);
+    const [sessionTasksDone, setSessionTasksDone] = useState(0);
     const settingsRef = useRef(DEFAULT_SETTINGS);
     const promptsRef = useRef({});   // task_type -> { system_text, role_text, enabled }
     const seenLimitRef = useRef(null);   // the task_limit this worker last reacted to (heartbeats do not change it)
     const kickRef = useRef(() => { });
     const refreshRef = useRef(() => { });
     const inFlight = useRef(new Set());
+    const retryAfterMap = useRef(new Map()); // taskId -> timestamp ms jab tak retry wait karna hai
+    const connectingRef = useRef(false); // parallel/duplicate connect calls prevent karne ke liye
     // Tasks this worker runs at once, and model calls it makes at once. Both read the settings table.
     const taskLimiter = useRef(createLimiter(() => settingsRef.current.task_concurrency)).current;
     const geminiLimiter = useRef(createLimiter(() => settingsRef.current.gemini_concurrency)).current;
 
     sbRef.current = sb;
 
-    const log = useCallback((text) => {
-        setLogs(prev => [{ t: new Date().toLocaleTimeString(), text }, ...prev].slice(0, 80));
-    }, []);
+    // Live countdown timer for DB refresh interval
+    useEffect(() => {
+        if (!sb) return;
+        const timer = setInterval(() => {
+            setNextDbSec(prev => (prev > 1 ? prev - 1 : refreshIntervalSec));
+        }, 1000);
+        return () => clearInterval(timer);
+    }, [sb, refreshIntervalSec]);
+
     // The screen log is cleared every 10 minutes. It only clears what is on screen, not the database.
     useEffect(() => {
         const timer = setInterval(() => setLogs([]), 10 * 60 * 1000);
@@ -511,6 +923,9 @@ export default function AiStudioWorker() {
         settingsRef.current = data;
         applyRuntime(data);
         setSettings(data);
+        const fbSec = data?.fallback_sec || Math.round(RUNTIME.fallback_ms / 1000) || 2;
+        setRefreshIntervalSec(fbSec);
+        setNextDbSec(fbSec);
         // Task prompts: a task whose prompt is missing or off is failed, never run with a default text
         const { data: prompts } = await client.rpc(API.GET_PROMPTS, { p_worker_id: workerIdRef.current });
         if (prompts) promptsRef.current = Object.fromEntries(prompts.map(p => [p.task_type, p]));
@@ -556,21 +971,31 @@ export default function AiStudioWorker() {
             if (score === null || score >= RUNTIME.match_threshold) break;
         }
         const cfg = settingsRef.current;
-        // The photo is made smaller before it is stored (PNG with transparency stays as it is)
-        const shipped = TASK_TYPES[task.task_type].transparentOut ? best.image.dataUrl : await shrinkDataUrl(best.image.dataUrl);
-        if (!cfg.cloudinary_enabled && !cfg.imgbb_enabled) throw new Error('Admin ne upload band kar rakha hai');
-        // One upload saves bandwidth. The second service is used only when the first one fails.
+        const isTransparent = TASK_TYPES[task.task_type].transparentOut;
+        let fullDataUrl = best.image.dataUrl;
+        let compressedDataUrl = isTransparent ? fullDataUrl : await shrinkDataUrl(fullDataUrl);
+        if (!cfg.cloudinary_enabled && !cfg.imgbb_enabled) {
+            fullDataUrl = null;
+            compressedDataUrl = null;
+            best = null;
+            throw new Error('Admin ne upload band kar rakha hai');
+        }
         let cloud = null;
         let imgbb = null;
-        let firstError = null;
-        if (cfg.cloudinary_enabled) {
-            try { cloud = await uploadDataUrlToCloudinary(shipped, cfg); } catch (err) { firstError = err; }
-        }
-        if (!cloud && cfg.imgbb_enabled) {
-            try { imgbb = await uploadToImgbb(shipped, cfg.imgbb_api_key); } catch (err) { firstError = firstError || err; }
-        }
-        if (!cloud && !imgbb) throw new Error('Upload nahi hua: ' + (firstError?.message || 'koi service chalu nahi'));
-        return { cloud, imgbb, score: best.score };
+        const uploads = [];
+        if (cfg.cloudinary_enabled) uploads.push(uploadDataUrlToCloudinary(compressedDataUrl, cfg).then(u => { cloud = u; }).catch(() => {}));
+        if (cfg.imgbb_enabled) uploads.push(uploadToImgbb(fullDataUrl, cfg.imgbb_api_key).then(u => { imgbb = u; }).catch(() => {}));
+        await Promise.all(uploads);
+
+        const score = best.score;
+        // Task upload complete: Release large base64 buffers immediately to keep RAM low
+        fullDataUrl = null;
+        compressedDataUrl = null;
+        if (best.image) best.image.dataUrl = null;
+        best = null;
+
+        if (!cloud && !imgbb) throw new Error('Upload nahi hua: dono service fail');
+        return { cloud, imgbb, score };
     };
 
     // A failed task: try again later while attempts are left, otherwise mark it failed.
@@ -579,33 +1004,78 @@ export default function AiStudioWorker() {
         if (pausedRef.current) return;
         pausedRef.current = true;
         setPaused(true);
-        await sbRef.current.rpc(API.AUTO_PAUSE, { p_worker_id: workerIdRef.current, p_reason: reason });
+        if (sbRef.current && workerIdRef.current) {
+            try {
+                await sbRef.current.rpc(API.AUTO_PAUSE, { p_worker_id: workerIdRef.current, p_reason: reason });
+            } catch (err) {
+                console.warn('AutoPause error:', err);
+            }
+        }
         log('Worker khud pause ho gaya: ' + reason);
     };
 
     const failTask = async (task, err) => {
         const msg = err?.message || 'Unknown error';
         const keyProblem = /HTTP 40[13]|API key|API_KEY|PERMISSION_DENIED/i.test(msg);
+        const isValidationError = /chahiye|Task type galat|DB mein nahi|Prompt khali/i.test(msg);
         const cfg = settingsRef.current;
         const attempts = (task.attempts || 0) + 1;
-        if (keyProblem) await autoPause('Gemini key galat ya permission nahi: ' + msg.slice(0, 80));
-        failStreakRef.current += 1;
-        if (failStreakRef.current >= 5) await autoPause('5 tasks lagatar fail hue');
-        if (!keyProblem && attempts < cfg.max_attempts) {
-            const nextRun = new Date(Date.now() + cfg.retry_delay_sec * 1000).toISOString();
+
+        // Task fail hone par worker ko KABHI BHI auto-pause nahi karna hai (Worker hamesha non-stop chalta rahega)
+        if (keyProblem) {
+            log(`Task #${task.id} warning: Key problem (${msg.slice(0, 70)})`);
+        }
+
+        // Validation errors (missing photos/prompts) permanent hain, inko repeat karne ka fayda nahi
+        if (!keyProblem && !isValidationError && attempts < cfg.max_attempts) {
+            const delaySec = cfg.retry_delay_sec || 30;
+            const nextRun = new Date(Date.now() + delaySec * 1000).toISOString();
+            retryAfterMap.current.set(task.id, Date.now() + delaySec * 1000);
             await complete(task.id, { status: 'pending', attempts, next_run_at: nextRun, error: msg });
-            log(`Task #${task.id}: fail, ${cfg.retry_delay_sec} second baad dobara (${attempts}/${cfg.max_attempts}): ${msg}`);
+            log(`Task #${task.id}: fail, ${delaySec} second baad dobara (${attempts}/${cfg.max_attempts}): ${msg}`);
         } else {
+            retryAfterMap.current.delete(task.id);
             await complete(task.id, { status: 'failed', attempts, error: msg });
             log(`Task #${task.id}: fail: ${msg}`);
+        }
+    };
+
+    const onTaskCompletedSuccess = () => {
+        failStreakRef.current = 0;
+        sessionTasksDoneRef.current += 1;
+        const currentDone = sessionTasksDoneRef.current;
+        setSessionTasksDone(currentDone);
+        const recycleLimit = Number(settingsRef.current.worker_recycle_after_tasks) || 50;
+
+        if (currentDone >= recycleLimit) {
+            log(`[Auto-Recycle] ${currentDone}/${recycleLimit} tasks complete ho gaye! Logs aur cache clear karke fresh page reload hoga...`);
+            // 1. Activity Logs clear
+            setLogs([]);
+            // 2. Memory & Image Caches purge
+            purgeAllMemory();
+            // 3. Reset session counter
+            sessionTasksDoneRef.current = 0;
+            setSessionTasksDone(0);
+            // 4. Fresh page reload taaki page hamesha smooth & fresh rahe
+            setTimeout(() => {
+                if (inFlight.current.size === 0) {
+                    window.location.reload();
+                }
+            }, 1200);
         }
     };
 
     // Run one claimed task from start to finish
     const processTask = async (task) => {
         const client = sbRef.current;
+        let inputs = {};
         try {
-            const type = TASK_TYPES[task.task_type];
+            let type = TASK_TYPES[task.task_type];
+            if (!type) {
+                console.log(`[Worker] Unknown task_type ${task.task_type}, refreshing catalog from database...`);
+                await loadSettings(client);
+                type = TASK_TYPES[task.task_type];
+            }
             if (!type) throw new Error(`Task type galat hai: ${task.task_type}`);
             for (const key of type.inputs) {
                 if (type.optional?.includes(key)) continue;
@@ -639,7 +1109,7 @@ export default function AiStudioWorker() {
             }
 
             // Load the reference images in parallel
-            const inputs = {};
+            inputs = {};
             const keys = type.inputs;
             const loaded = await Promise.all(keys.map(k => urlToBase64(task[INPUT_COLUMN[k]])));
             keys.forEach((k, i) => { inputs[k] = loaded[i]; });
@@ -651,14 +1121,15 @@ export default function AiStudioWorker() {
             if (type.output === 'text') {
                 const result = await askModel({ ...task, history }, inputs);
                 await complete(task.id, { status: 'done', output_text: result.text });
-                failStreakRef.current = 0;
-            log(`Task #${task.id}: text tayyar`);
+                onTaskCompletedSuccess();
+                log(`Task #${task.id}: text tayyar`);
                 return;
             }
 
             // Photos one by one: each uploaded photo (up to 10) gets the same prompt, so one result per photo
             if (type.perPhoto) {
-                const photosIn = (task.extra_image_urls || []).filter(Boolean).slice(0, 10);
+                const maxBatch = settingsRef.current?.photos_per_task_max || 50;
+                const photosIn = (task.extra_image_urls || []).filter(Boolean).slice(0, maxBatch);
                 const done = await Promise.allSettled(photosIn.map(async (url) => {
                     const b64 = await urlToBase64(url);
                     return makePhoto(task, { extras: [b64] });
@@ -674,7 +1145,7 @@ export default function AiStudioWorker() {
                     imgbb_image_urls: imgbbOut,
                     face_match_score: null
                 });
-                failStreakRef.current = 0;
+                onTaskCompletedSuccess();
                 log(`Task #${task.id}: ${made.length} / ${photosIn.length} photo bani`);
                 return;
             }
@@ -700,10 +1171,17 @@ export default function AiStudioWorker() {
                 imgbb_image_urls: imgbbUrls,
                 face_match_score: scores.length ? Math.max(...scores) : null
             });
-            failStreakRef.current = 0;
+            onTaskCompletedSuccess();
             log(`Task #${task.id}: ${photos.length} photo (Cloudinary ${cloudUrls.length}, ImgBB ${imgbbUrls.length})`);
         } catch (err) {
             await failTask(task, err);
+        } finally {
+            // Task complete ho gaya (ImgBB/Cloudinary + DB done) -> Cache & Base64 memory free karo
+            cleanTaskCache(task);
+            if (inputs) {
+                for (const k in inputs) { inputs[k] = null; }
+                inputs = null;
+            }
         }
     };
 
@@ -715,12 +1193,15 @@ export default function AiStudioWorker() {
         if (!Object.keys(RUNTIME.model_caps).length) return;   // and until the model list is known
         if (settingsRef.current.budget_left === 0) return;
         if (inFlight.current.size >= (settingsRef.current.task_concurrency || 1)) return;   // no free slot: do not ask the DB
+        setLastDbFetch(new Date().toLocaleTimeString());
+        setNextDbSec(refreshIntervalSec);
         try {
             const stale = new Date(Date.now() - RUNTIME.stale_ms).toISOString();
             const { data, error } = await client.rpc(API.GET_PENDING, { p_worker_id: workerIdRef.current, p_stale_before: stale, p_limit: 40 });
             if (error) throw error;
             for (const task of data || []) {
                 if (inFlight.current.has(task.id)) continue;
+                if (retryAfterMap.current.has(task.id) && Date.now() < retryAfterMap.current.get(task.id)) continue;
                 if ((settingsRef.current.disabled_models || []).includes(task.model)) continue;
                 inFlight.current.add(task.id);
                 setRunning(inFlight.current.size);
@@ -754,10 +1235,14 @@ export default function AiStudioWorker() {
         kickRef.current();
     };
 
-    const connect = async () => {
+    const connect = async (overrideUrl) => {
+        if (connectingRef.current || sbRef.current) return;
+        connectingRef.current = true;
         try {
-            const lib = await loadSupabase();
-            const client = lib.createClient(SUPABASE_URL, supabaseKey);
+            const targetUrl = typeof overrideUrl === 'string' ? overrideUrl : (customApiUrl || API_URL);
+            const lib = await loadApiClient();
+            const client = lib.createClient(targetUrl, apiKey);
+            log(`Connecting to ${client.apiUrl}...`);
 
             // Unique worker id from the DB (worker_1, worker_2 ...). The same tab keeps its id.
             const wanted = sessionStorage.getItem('ai_studio_worker_id');
@@ -765,12 +1250,16 @@ export default function AiStudioWorker() {
             if (error) throw error;
             sessionStorage.setItem('ai_studio_worker_id', data);
             workerIdRef.current = data;
+            sbRef.current = client;
             setWorkerId(data);
             await loadSettings(client);
             setSb(client);
             log(`Connected as ${data}`);
         } catch (err) {
+            sbRef.current = null;
             log('Connect error: ' + err.message);
+        } finally {
+            connectingRef.current = false;
         }
     };
 
@@ -838,10 +1327,11 @@ export default function AiStudioWorker() {
         const release = () => {
             const w = workerIdRef.current;
             if (!w) return;
-            fetch(`${SUPABASE_URL}/rest/v1/rpc/${API.RELEASE_WORKER}`, {
+            const targetUrl = sbRef.current?.apiUrl || API_URL;
+            fetch(`${targetUrl}/rest/v1/rpc/${API.RELEASE_WORKER}`, {
                 method: 'POST',
                 keepalive: true,
-                headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
+                headers: { 'Bypass-Tunnel-Reminder': 'true', apikey: apiKey, Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({ p_worker_id: w })
             });
         };
@@ -854,7 +1344,7 @@ export default function AiStudioWorker() {
             if (channel) sb.removeChannel(channel);
             window.removeEventListener('pagehide', release);
         };
-    }, [sb, supabaseKey]);
+    }, [sb, apiKey]);
 
     // Connects by itself: when the page opens, and again every 15 s until it is connected (needs the Gemini key in this browser)
     useEffect(() => {
@@ -880,6 +1370,29 @@ export default function AiStudioWorker() {
                     </div>
                 </div>
                 <div className="flex items-center gap-2 text-xs">
+                    {/* Session Tasks Progress Badge */}
+                    <div className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-stone-900 border border-white/10 text-xs font-mono" title="Worker auto-recycle limit from DB">
+                        <span className="text-stone-400">Tasks:</span>
+                        <strong className="text-yellow-300">{sessionTasksDone}/{settings.worker_recycle_after_tasks || 50}</strong>
+                    </div>
+                    {/* RAM Live Monitor Badge & Purge Button */}
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-900 border border-white/10 text-xs font-mono">
+                        <span className={`w-2 h-2 rounded-full ${memStats.usedMB > 150 ? 'bg-rose-500 animate-ping' : memStats.usedMB > 80 ? 'bg-amber-400' : 'bg-emerald-400'}`}></span>
+                        <span>RAM: <strong className={memStats.usedMB > 150 ? 'text-rose-400' : 'text-stone-200'}>{memStats.supported ? `${memStats.usedMB} MB` : 'Normal'}</strong></span>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                purgeAllMemory();
+                                const fresh = getMemoryStats();
+                                setMemStats(fresh);
+                                log('RAM & Cache memory saaf kar di gayi');
+                            }}
+                            title="RAM aur Caches abhi saaf karein"
+                            className="ml-1 text-[10px] text-yellow-300 hover:text-yellow-200 underline font-sans font-bold"
+                        >
+                            Purge
+                        </button>
+                    </div>
                     <button onClick={refreshAll} title="Refresh" className="h-9 w-9 flex items-center justify-center rounded-xl border border-white/10 bg-stone-900 text-stone-300"><RefreshCw className="w-4 h-4" /></button>
                     {!sb && <button onClick={connect} disabled={!!sb} className="h-9 px-4 rounded-xl bg-yellow-400 text-stone-950 font-black disabled:opacity-40">Connect</button>}
                     <span className="font-mono font-bold text-yellow-300">{workerId || '—'}</span>
@@ -887,14 +1400,62 @@ export default function AiStudioWorker() {
                 </div>
             </header>
 
-
+                        {/* ⚙️ Top API Settings Bar */}
+            <div className="bg-stone-900 border border-yellow-400/20 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 text-xs shadow-lg">
+                <div className="flex items-center gap-2 flex-1 min-w-[300px]">
+                    <span className="flex items-center gap-1.5 font-bold text-yellow-300 text-xs whitespace-nowrap">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        API Endpoint:
+                    </span>
+                    <input
+                        type="text"
+                        value={customApiUrl}
+                        onChange={(e) => {
+                            const val = e.target.value.trim();
+                            setCustomApiUrl(val);
+                            try { localStorage.setItem('aistudio_api_url', val); } catch {}
+                        }}
+                        placeholder="https://aistudio.runasp.net"
+                        className="flex-1 bg-stone-950 border border-stone-700 rounded-xl px-3 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-yellow-400"
+                    />
+                    <button
+                        type="button"
+                        onClick={() => connect(customApiUrl)}
+                        className="px-4 py-1.5 bg-yellow-400 hover:bg-yellow-300 text-stone-950 font-bold rounded-xl transition-all text-xs"
+                    >
+                        Save & Connect
+                    </button>
+                </div>
+                <div className="flex items-center gap-2 text-[11px] text-stone-400">
+                    <span>Default:</span>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            const u = "https://aistudio.runasp.net";
+                            setCustomApiUrl(u);
+                            try { localStorage.setItem('aistudio_api_url', u); } catch {}
+                            connect(u);
+                        }}
+                        className="font-mono text-yellow-300 hover:underline font-bold"
+                    >
+                        https://aistudio.runasp.net
+                    </button>
+                </div>
+            </div>
 
             {/* Numbers */}
-            <section className="grid gap-3 grid-cols-2 sm:grid-cols-4">
-                {[['Abhi chal rahe', running], ['Done', myCounts.done ?? '—'], ['Failed', myCounts.failed ?? '—'], ['Ek saath tasks', settings.task_concurrency]].map(([label, value]) => (
+            <section className="grid gap-3 grid-cols-2 sm:grid-cols-6">
+                {[
+                    ['Abhi chal rahe', running],
+                    ['Done', myCounts.done ?? '—'],
+                    ['Failed', myCounts.failed ?? '—'],
+                    ['Ek saath tasks', settings.task_concurrency],
+                    ['Memory (RAM)', memStats.supported ? `${memStats.usedMB} MB` : `${inputCache.size} Cache`],
+                    ['Recycle (Done/Limit)', `${sessionTasksDone} / ${settings.worker_recycle_after_tasks || 50}`]
+                ].map(([label, value]) => (
                     <div key={label} className="bg-stone-900 border border-white/10 rounded-2xl p-4">
                         <p className="text-[11px] text-stone-400">{label}</p>
-                        <p className="text-2xl font-extrabold font-mono">{value}</p>
+                        <p className="text-2xl font-extrabold font-mono text-stone-100">{value}</p>
                     </div>
                 ))}
             </section>
@@ -951,9 +1512,46 @@ export default function AiStudioWorker() {
                 )}
             </section>
 
-            {/* Log */}
-            <section className="bg-stone-900 border border-white/10 rounded-2xl p-4 space-y-2">
-                <h2 className="text-xs font-extrabold flex items-center gap-2"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" /> Log</h2>
+            {/* Console & Activity Log */}
+            <section className="bg-stone-900 border border-white/10 rounded-2xl p-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/5 pb-2.5">
+                    <div className="flex items-center gap-2">
+                        <h2 className="text-xs font-extrabold flex items-center gap-2">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-400" /> Console & Activity Log
+                        </h2>
+                        <span className="text-[10px] text-stone-400 font-mono">({logs.length}/30 max)</span>
+                        {logs.length > 0 && (
+                            <button
+                                type="button"
+                                onClick={() => setLogs([])}
+                                className="text-[10px] text-stone-400 hover:text-yellow-300 underline font-mono ml-1"
+                                title="Abhi log saaf karein"
+                            >
+                                Clear
+                            </button>
+                        )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 font-mono text-[11px]">
+                        <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 font-semibold">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                            DB Refresh: Har {refreshIntervalSec}s me
+                        </span>
+                        <span className="px-2.5 py-1 rounded-lg bg-stone-800 border border-white/10 text-stone-300 font-semibold">
+                            Agla DB fetch: <span className="text-yellow-300 font-bold font-mono">{nextDbSec}s</span>
+                        </span>
+                        <span className="px-2.5 py-1 rounded-lg bg-stone-800 border border-white/10 text-stone-300 font-semibold" title="Auto-purges cache when task ends or high RAM">
+                            RAM: <span className="text-emerald-300 font-bold font-mono">{memStats.supported ? `${memStats.usedMB} MB` : 'Safe'}</span>
+                        </span>
+                        <span className="px-2.5 py-1 rounded-lg bg-stone-800 border border-white/10 text-stone-300 font-semibold" title="Tasks before auto-recycle and fresh reload">
+                            Auto-Recycle: <span className="text-yellow-300 font-bold font-mono">{sessionTasksDone}/{settings.worker_recycle_after_tasks || 50}</span>
+                        </span>
+                        {lastDbFetch && (
+                            <span className="text-stone-400 text-[10px]">
+                                (Aakhri fetch: {lastDbFetch})
+                            </span>
+                        )}
+                    </div>
+                </div>
                 <div className="max-h-56 overflow-auto space-y-1 font-mono text-[11px] text-stone-300">
                     {logs.map((l, i) => <p key={i}><span className="text-stone-500">{l.t}</span> {l.text}</p>)}
                     {logs.length === 0 && <p className="text-stone-500">Connect karo to log yahan aayega.</p>}

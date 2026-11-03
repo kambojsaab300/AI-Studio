@@ -2,15 +2,313 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Sparkles, LogIn, LogOut, Send, RefreshCw, Download, AlertCircle, CheckCircle2, Clock, Upload, UserPlus } from 'lucide-react';
 
 // ============================================================
+// AI Studio: .NET Core API Client (Standalone Inline Adapter)
+// Powered by .NET Core Web API & Microsoft SQL Server
+// ============================================================
+class ApiQueryBuilder {
+    constructor(apiUrl, table, token) {
+        this.apiUrl = apiUrl;
+        this.table = table;
+        this.token = token;
+        this.params = new URLSearchParams();
+        this._isSingle = false;
+        this._isCount = false;
+        this._isHead = false;
+    }
+
+    select(columns = '*', options = {}) {
+        this.params.set('select', columns);
+        if (options && options.count) {
+            this._isCount = true;
+            this.params.set('count', options.count);
+        }
+        if (options && options.head) {
+            this._isHead = true;
+            this.params.set('head', 'true');
+        }
+        return this;
+    }
+
+    order(column, { ascending = true } = {}) {
+        this.params.set('order', `${column}.${ascending ? 'asc' : 'desc'}`);
+        return this;
+    }
+
+    limit(n) {
+        this.params.set('limit', String(n));
+        return this;
+    }
+
+    range(from, to) {
+        this.params.set('offset', String(from));
+        this.params.set('limit', String(to - from + 1));
+        return this;
+    }
+
+    eq(column, value) {
+        this.params.append(column, `eq.${value}`);
+        return this;
+    }
+
+    neq(column, value) {
+        this.params.append(column, `neq.${value}`);
+        return this;
+    }
+
+    is(column, value) {
+        this.params.append(column, `is.${value}`);
+        return this;
+    }
+
+    in(column, values) {
+        const list = Array.isArray(values) ? values.join(',') : values;
+        this.params.append(column, `in.(${list})`);
+        return this;
+    }
+
+    single() {
+        this._isSingle = true;
+        return this;
+    }
+
+    async _fetch(url, options = {}) {
+        const headers = {
+            'Content-Type': 'application/json',
+            'Bypass-Tunnel-Reminder': 'true',
+            ...(this.token ? { 'Authorization': `Bearer ${this.token}` } : {})
+        };
+        if (this._isSingle) {
+            headers['Accept'] = 'application/vnd.pgrst.object+json';
+        }
+
+        try {
+            const res = await fetch(url, { ...options, headers });
+            let countVal = 0;
+            const contentRange = res.headers.get('content-range') || res.headers.get('Content-Range');
+            if (contentRange) {
+                const parts = contentRange.split('/');
+                if (parts.length > 1) countVal = parseInt(parts[1], 10) || 0;
+            } else {
+                const totalHdr = res.headers.get('x-total-count') || res.headers.get('X-Total-Count');
+                if (totalHdr) countVal = parseInt(totalHdr, 10) || 0;
+            }
+
+            if (!res.ok) {
+                const text = await res.text();
+                let errObj;
+                try { errObj = JSON.parse(text); } catch { errObj = { message: text }; }
+                return { data: null, error: errObj, count: 0 };
+            }
+
+            const data = await res.json();
+            if (countVal === 0 && Array.isArray(data)) countVal = data.length;
+
+            return {
+                data: this._isSingle && Array.isArray(data) ? (data[0] || null) : data,
+                error: null,
+                count: countVal
+            };
+        } catch (err) {
+            return { data: null, error: { message: err.message }, count: 0 };
+        }
+    }
+
+    then(resolve, reject) {
+        const url = `${this.apiUrl}/rest/v1/${this.table}?${this.params.toString()}`;
+        return this._fetch(url, { method: 'GET' }).then(resolve, reject);
+    }
+
+    async insert(data) {
+        const url = `${this.apiUrl}/rest/v1/${this.table}`;
+        return this._fetch(url, { method: 'POST', body: JSON.stringify(data) });
+    }
+
+    async update(data) {
+        const url = `${this.apiUrl}/rest/v1/${this.table}?${this.params.toString()}`;
+        return this._fetch(url, { method: 'PATCH', body: JSON.stringify(data) });
+    }
+
+    async delete() {
+        const url = `${this.apiUrl}/rest/v1/${this.table}?${this.params.toString()}`;
+        return this._fetch(url, { method: 'DELETE' });
+    }
+}
+
+function getEffectiveApiUrl(providedUrl) {
+    if (typeof window !== 'undefined') {
+        const queryApi = new URLSearchParams(window.location.search).get('api');
+        if (queryApi) {
+            try { localStorage.setItem('aistudio_api_url', queryApi); } catch { }
+            return queryApi.replace(/\/$/, "");
+        }
+        try {
+            const savedApi = localStorage.getItem('aistudio_api_url');
+            if (savedApi) {
+                if (savedApi.includes('trycloudflare.com')) {
+                    try { localStorage.removeItem('aistudio_api_url'); } catch { }
+                } else {
+                    return (savedApi === 'http://aistudio.runasp.net' ? 'https://aistudio.runasp.net' : savedApi).replace(/\/$/, "");
+                }
+            }
+        } catch { }
+        if (providedUrl) {
+            return providedUrl.replace(/\/$/, "");
+        }
+    }
+    return (providedUrl || "https://aistudio.runasp.net").replace(/\/$/, "");
+}
+
+function createClient(apiUrl = "https://aistudio.runasp.net", apiKey = "") {
+    const url = getEffectiveApiUrl(apiUrl);
+    let token = "";
+    let currentUser = null;
+    try {
+        token = localStorage.getItem('aistudio_token') || "";
+        const saved = localStorage.getItem('aistudio_user');
+        if (saved) currentUser = JSON.parse(saved);
+    } catch { }
+
+    const authListeners = new Set();
+
+    return {
+        apiUrl: url,
+        auth: {
+            async signInWithPassword({ email, password }) {
+                try {
+                    const res = await fetch(`${url}/api/auth/login`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Bypass-Tunnel-Reminder': 'true' },
+                        body: JSON.stringify({ email, password })
+                    });
+                    const json = await res.json();
+                    if (!res.ok) return { data: null, error: { message: json.error || 'Login fail hua.' } };
+                    token = json.access_token;
+                    currentUser = json.user;
+                    try {
+                        localStorage.setItem('aistudio_token', token);
+                        localStorage.setItem('aistudio_user', JSON.stringify(currentUser));
+                    } catch { }
+                    authListeners.forEach(cb => cb('SIGNED_IN', { user: currentUser, access_token: token }));
+                    return { data: { user: currentUser, session: { access_token: token, user: currentUser } }, error: null };
+                } catch (err) {
+                    return { data: null, error: { message: err.message } };
+                }
+            },
+
+            async signInAnonymously() {
+                const guestEmail = `guest_${Date.now()}@aistudio.local`;
+                return this.signUp({ email: guestEmail, password: "Guest@123456" });
+            },
+
+            async signUp({ email, password }) {
+                try {
+                    const res = await fetch(`${url}/api/auth/signup`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Bypass-Tunnel-Reminder': 'true' },
+                        body: JSON.stringify({ email, password })
+                    });
+                    const json = await res.json();
+                    if (!res.ok) return { data: null, error: { message: json.error || 'Signup fail hua.' } };
+                    token = json.access_token;
+                    currentUser = json.user;
+                    try {
+                        localStorage.setItem('aistudio_token', token);
+                        localStorage.setItem('aistudio_user', JSON.stringify(currentUser));
+                    } catch { }
+                    authListeners.forEach(cb => cb('SIGNED_IN', { user: currentUser, access_token: token }));
+                    return { data: { user: currentUser, session: { access_token: token, user: currentUser } }, error: null };
+                } catch (err) {
+                    return { data: null, error: { message: err.message } };
+                }
+            },
+
+            async signOut() {
+                token = "";
+                currentUser = null;
+                try {
+                    localStorage.removeItem('aistudio_token');
+                    localStorage.removeItem('aistudio_user');
+                } catch { }
+                authListeners.forEach(cb => cb('SIGNED_OUT', null));
+                return { error: null };
+            },
+
+            async getSession() {
+                if (token && currentUser) return { data: { session: { access_token: token, user: currentUser } }, error: null };
+                return { data: { session: null }, error: null };
+            },
+
+            async getUser() {
+                return { data: { user: currentUser }, error: null };
+            },
+
+            onAuthStateChange(callback) {
+                authListeners.add(callback);
+                return {
+                    data: {
+                        subscription: {
+                            unsubscribe: () => authListeners.delete(callback)
+                        }
+                    }
+                };
+            }
+        },
+
+        from(table) {
+            return new ApiQueryBuilder(url, table, token);
+        },
+
+        async rpc(functionName, params = {}) {
+            try {
+                const res = await fetch(`${url}/rest/v1/rpc/${functionName}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Bypass-Tunnel-Reminder': 'true',
+                        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                    },
+                    body: JSON.stringify(params || {})
+                });
+
+                const text = await res.text();
+                if (!res.ok) {
+                    let errObj;
+                    try { errObj = JSON.parse(text); } catch { errObj = { message: text }; }
+                    return { data: null, error: errObj };
+                }
+
+                let data;
+                try { data = JSON.parse(text); } catch { data = text; }
+                return { data, error: null };
+            } catch (err) {
+                return { data: null, error: { message: err.message } };
+            }
+        },
+
+        channel(name) {
+            const ch = {
+                name,
+                on() { return ch; },
+                subscribe() { return ch; }
+            };
+            return ch;
+        },
+
+        removeChannel() { }
+    };
+}
+
+// ============================================================
 // AI STUDIO CUSTOMER: the customer gives the input and gets the result. Sees only their own tasks.
+// Powered by .NET Core Web API & Microsoft SQL Server
 // ============================================================
 
-const SUPABASE_URL = "https://kdwkdhjtcebrhtokhirg.supabase.co";
+const API_URL = "https://aistudio.runasp.net";
 // Publishable key: safe in the app code (row security protects the data)
-const SUPABASE_KEY = "sb_publishable_lRLDmrcgSfw7RNL5FtzFdg_3N_rWS8r";
+const API_KEY = "aistudio_local_key";
 const CLOUDINARY_CLOUD_NAME = "draaqjcre";
 const CLOUDINARY_UPLOAD_PRESET = "ml_default";
-const REFRESH_MS = 20000;
+const REFRESH_MS = 2000;          // Auto-refresh from DB every 2 seconds
 
 // ── API: every call the app makes, named in one place ──
 // Database function (sb.rpc)
@@ -221,27 +519,48 @@ async function uploadFile(file) {
     return data.secure_url;
 }
 
-let supabaseLoading = null;
 function loadClient(anonKey) {
-    if (!window.supabase) {
-        if (!supabaseLoading) {
-            supabaseLoading = new Promise((resolve, reject) => {
-                const s = document.createElement('script');
-                s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
-                s.onload = () => resolve();
-                s.onerror = () => reject(new Error('Supabase load nahi hua'));
-                document.head.appendChild(s);
-            });
-        }
-        return supabaseLoading.then(() => window.supabase.createClient(SUPABASE_URL, anonKey));
-    }
-    return Promise.resolve(window.supabase.createClient(SUPABASE_URL, anonKey));
+    return Promise.resolve(createClient(API_URL, anonKey));
 }
+
+const SUIT_STOCK_MODELS = {
+    man: [
+        { id: 'm1', name: 'Indian Formal Male Model', url: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=800&q=80' },
+        { id: 'm2', name: 'Corporate Tuxedo Male Model', url: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=800&q=80' }
+    ],
+    woman: [
+        { id: 'w1', name: 'Graceful Ethnic Female Model', url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=800&q=80' },
+        { id: 'w2', name: 'Modern Pant-Suit Female Model', url: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=800&q=80' }
+    ],
+    kids: [
+        { id: 'k1', name: 'Kid Boy Model (7-9 yr)', url: 'https://images.unsplash.com/photo-1519457431-44ccd64a579b?w=800&q=80' },
+        { id: 'k2', name: 'Kid Girl Model (6-8 yr)', url: 'https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?w=800&q=80' }
+    ]
+};
+
+const SUIT_POSES = [
+    { id: 'all', label: '🌟 All Poses (6 Photos Batch)', desc: 'Front, Back, Side, Close-up, Upper, Down sab ek saath', batch: 6, angleText: '' },
+    { id: 'front', label: '🧍 Front Pose', desc: 'Full standing front view, complete suit fitting', batch: 1, angleText: 'front pose (full standing front view showing complete suit fit and silhouette)' },
+    { id: 'back', label: '🔄 Back Pose', desc: 'Back view showing back cut, styling and shoulder fit', batch: 1, angleText: 'back pose (back fitting and cut view showing rear design)' },
+    { id: 'side', label: '📐 Side Pose', desc: '45 degree side profile view, sleek drape', batch: 1, angleText: 'side pose (side profile 45 degree angle showing silhouette)' },
+    { id: 'close', label: '🔍 Close-up Pose', desc: 'Fabric texture, lapel, buttons & stitching detail', batch: 1, angleText: 'close-up pose (fabric texture and lapel details shot in macro focus)' },
+    { id: 'upper', label: '👤 Upper Pose', desc: 'Waist-up portrait, chest & collar focus', batch: 1, angleText: 'upper pose (waist-up portrait pose showing chest, collar and tie)' },
+    { id: 'down', label: '🚶 Down / Full Pose', desc: 'Complete full length from shoulders to shoes', batch: 1, angleText: 'down pose (full length standing pose showing trousers and suit length)' }
+];
+
+const COMBO_5_POSES = [
+    { id: 'all', label: '🌟 All 5 Poses Combo (5 Photos Set)', desc: 'Front, Back, Side, Close-up & Upper body ek saath', batch: 5, angleText: '' },
+    { id: 'front', label: '🧍 Front View Pose', desc: 'Full standing front catalog view, complete outfit silhouette', batch: 1, angleText: 'Front View Pose (full standing front catalog view showing complete outfit silhouette)' },
+    { id: 'back', label: '🔄 Back View Pose', desc: 'Full standing rear view, back fit and styling', batch: 1, angleText: 'Back View Pose (full standing rear view showing back fit and styling)' },
+    { id: 'side', label: '📐 Side View Pose', desc: '45 degree side profile fashion angle showing posture and drape', batch: 1, angleText: 'Side View Pose (45 degree side profile fashion angle showing posture and drape)' },
+    { id: 'close', label: '🔍 Close-up Macro Pose', desc: 'Macro texture, collar, buttons, lapels and fabric weave', batch: 1, angleText: 'Close-up Macro Pose (macro texture, collar, buttons, lapels and fabric weave focus)' },
+    { id: 'upper', label: '👤 Upper Body Portrait Pose', desc: 'Waist-up professional catalog portrait showing face and chest', batch: 1, angleText: 'Upper Body Portrait Pose (waist-up professional catalog portrait showing face and chest)' }
+];
 
 const EMPTY = { task_type: 'image_to_image_prompt', prompt: '', aspect_ratio: '4:5', image_size: '2K', batch_count: 1, face_image_url: '', style_image_url: '', input_image_url: '', extra_image_urls: '', family_urls: ['', '', '', '', '', ''], conversation_id: '' };
 
 export default function AiStudioCustomer() {
-    const [anonKey, setAnonKey] = useState(SUPABASE_KEY);
+    const [anonKey, setAnonKey] = useState(API_KEY);
     const [sb, setSb] = useState(null);
     const [session, setSession] = useState(null);
     const [mode, setMode] = useState('login');      // 'login' | 'signup'
@@ -258,6 +577,25 @@ export default function AiStudioCustomer() {
     const [models, setModels] = useState([]);             // the AI models, from the database
     const [apps, setApps] = useState([]);                 // the apps (WearGen, PPP ...), from the database
     const [appId, setAppId] = useState('weargen');        // the app the customer is working in
+    const [suitCategory, setSuitCategory] = useState('man');  // 'man' | 'woman' | 'kids' | 'custom'
+    const [suitSelectedPose, setSuitSelectedPose] = useState('all'); // 'all' | 'front' | 'back' | 'side' | 'close' | 'upper' | 'down'
+    const [comboSelectedPose, setComboSelectedPose] = useState('all'); // 'all' | 'front' | 'back' | 'side' | 'close' | 'upper'
+
+    // Studio auto-defaults
+    useEffect(() => {
+        if (form.task_type === 'suit_studio') {
+            if (!form.face_image_url && SUIT_STOCK_MODELS.man?.[0]) {
+                setField('face_image_url', SUIT_STOCK_MODELS.man[0].url);
+            }
+            if (suitSelectedPose === 'all') {
+                setField('batch_count', 6);
+            }
+        } else if (form.task_type === 'combo_5pose_studio') {
+            if (comboSelectedPose === 'all') {
+                setField('batch_count', 5);
+            }
+        }
+    }, [form.task_type]);
 
     // The AI models come from the database (ai_studio_models)
     useEffect(() => {
@@ -346,7 +684,7 @@ export default function AiStudioCustomer() {
         setPassword('');
     };
 
-    // Login without email: a guest account (needs "Anonymous sign-ins" on in Supabase Auth settings)
+    // Login without email: a guest account (needs "Anonymous sign-ins" on in API Auth settings)
     const guestIn = async () => {
         setAuthMsg('');
         const { error } = await sb.auth.signInAnonymously();
@@ -368,7 +706,7 @@ export default function AiStudioCustomer() {
     const loadMine = useCallback(async () => {
         if (!sb || !session) return;
         const { data, error } = await sb.from(TABLES.TASKS)
-            .select('id, app_id, task_type, prompt, status, error, output_text, output_image_url, output_image_urls, face_match_score, batch_count, conversation_id, created_at, face_image_url, input_image_url')
+            .select('id, app_id, task_type, prompt, status, error, output_text, output_image_url, output_image_urls, face_match_score, batch_count, conversation_id, created_at, face_image_url, input_image_url, style_image_url')
             .order('id', { ascending: false })
             .limit(50);
         if (!error) setMyTasks(data || []);
@@ -449,11 +787,35 @@ export default function AiStudioCustomer() {
         setSending(true);
         setMsg('');
         const isImage = kind.output === 'image';
+        let taskPrompt = form.prompt.trim() || null;
+        let batchCount = isImage ? Number(form.batch_count) : 1;
+        if (form.task_type === 'suit_studio') {
+            if (suitSelectedPose === 'all') {
+                batchCount = 6;
+            } else {
+                batchCount = 1;
+                const chosen = SUIT_POSES.find(p => p.id === suitSelectedPose);
+                if (chosen?.angleText) {
+                    taskPrompt = (taskPrompt ? taskPrompt + '. ' : '') + `Camera angle: ${chosen.angleText}.`;
+                }
+            }
+        } else if (form.task_type === 'combo_5pose_studio') {
+            if (comboSelectedPose === 'all') {
+                batchCount = 5;
+            } else {
+                batchCount = 1;
+                const chosen = COMBO_5_POSES.find(p => p.id === comboSelectedPose);
+                if (chosen?.angleText) {
+                    taskPrompt = (taskPrompt ? taskPrompt + '. ' : '') + `Camera angle: ${chosen.angleText}.`;
+                }
+            }
+        }
+
         const row = {
             app_id: appId,
             task_type: form.task_type,
             model: isImage ? imageModel : textModel,
-            prompt: form.prompt.trim() || null,
+            prompt: taskPrompt,
             aspect_ratio: isImage ? form.aspect_ratio : null,
             image_size: isImage && sizes.length ? form.image_size : null,
             face_image_url: kind.inputs.includes('face') ? form.face_image_url.trim() : null,
@@ -463,7 +825,7 @@ export default function AiStudioCustomer() {
                 ? form.family_urls.map(s => s.trim())   // empty slots stay, so the roles keep their order
                 : kind.extras ? form.extra_image_urls.split('\n').map(s => s.trim()).filter(Boolean) : null,
             conversation_id: form.task_type === 'chat' ? (form.conversation_id.trim() || null) : null,
-            batch_count: isImage ? Number(form.batch_count) : 1
+            batch_count: batchCount
         };
         const { error } = await sb.rpc(API.CREATE_TASK, { p_payload: row });
         setSending(false);
@@ -541,21 +903,226 @@ export default function AiStudioCustomer() {
                     </select>
                     <p className="text-[11px] text-stone-400">{kind.hint}</p>
 
-                    {kind.inputs.map(key => kind.edit && key === 'style' ? (
-                        <MaskBlock key={key} label={labelFor(kind, key)} photoUrl={form.face_image_url} maskUrl={form.style_image_url} onSave={saveMask} />
-                    ) : (
-                        <div key={key} className="space-y-1.5">
-                            <p className="text-xs font-bold text-stone-200">{labelFor(kind, key)}{kind.optional?.includes(key) ? ' (optional)' : ''}</p>
-                            <div className="grid gap-2 sm:grid-cols-[1fr_auto] items-center">
-                                <input value={form[INPUT_COLUMN[key]]} onChange={e => setField(INPUT_COLUMN[key], e.target.value)} placeholder="Photo ka link (ya upload karo)" className="h-10 bg-stone-950 border border-white/10 rounded-xl px-3 text-xs" />
-                                <label className="h-10 px-3 flex items-center gap-1.5 bg-stone-800 border border-white/10 rounded-xl text-xs font-bold cursor-pointer">
-                                    <Upload className="w-3.5 h-3.5" /> Upload
-                                    <input type="file" accept="image/*" className="hidden" onChange={e => pickFile(e, INPUT_COLUMN[key])} />
-                                </label>
+                    {/* 👔 Specialized Suit Shop Studio Interface */}
+                    {form.task_type === 'suit_studio' ? (
+                        <div className="space-y-4 pt-1">
+                            <div className="bg-gradient-to-r from-yellow-500/20 via-amber-500/10 to-stone-900 border border-yellow-400/30 rounded-2xl p-4 space-y-1">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xl">👔</span>
+                                    <h3 className="text-sm font-extrabold text-yellow-300">Suit Shop Studio (Virtual Model Try-On)</h3>
+                                </div>
+                                <p className="text-[11px] text-stone-300">
+                                    Apne suit/outfit ki photo upload karein, Model chun kar Front, Back, Side, Close-up, Upper, Down poses me photoshoot banwayein.
+                                </p>
                             </div>
-                            {form[INPUT_COLUMN[key]] && <img src={form[INPUT_COLUMN[key]]} alt="" className="h-24 rounded-xl object-cover border border-white/10" />}
+
+                            {/* 1. Model Category Selector */}
+                            <div className="space-y-2">
+                                <p className="text-xs font-bold text-stone-200">1. Model Category Chunein (Kisko suit pehnana hai?)</p>
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                    {[
+                                        { id: 'man', label: '👨 Man Model', sub: 'Men Suit / Blazer' },
+                                        { id: 'woman', label: '👩 Woman Model', sub: 'Ladies Suit / Dress' },
+                                        { id: 'kids', label: '🧒 Kids Model', sub: 'Boy / Girl Kids Suit' },
+                                        { id: 'custom', label: '📷 Custom Model', sub: 'Apna Model Upload' }
+                                    ].map(cat => (
+                                        <button
+                                            key={cat.id}
+                                            type="button"
+                                            onClick={() => {
+                                                setSuitCategory(cat.id);
+                                                if (cat.id !== 'custom' && SUIT_STOCK_MODELS[cat.id]?.[0]) {
+                                                    setField('face_image_url', SUIT_STOCK_MODELS[cat.id][0].url);
+                                                }
+                                            }}
+                                            className={`p-2.5 rounded-xl border text-left transition-all ${suitCategory === cat.id ? 'bg-yellow-400/15 border-yellow-400 text-yellow-300' : 'bg-stone-900 border-white/10 text-stone-300 hover:border-white/20'}`}
+                                        >
+                                            <p className="text-xs font-bold">{cat.label}</p>
+                                            <p className="text-[10px] text-stone-400">{cat.sub}</p>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Ready Stock Model Picker */}
+                            {suitCategory !== 'custom' && (
+                                <div className="space-y-2">
+                                    <p className="text-xs font-bold text-stone-200">Ready-made AI Models ({suitCategory.toUpperCase()})</p>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {(SUIT_STOCK_MODELS[suitCategory] || []).map(m => {
+                                            const isSelected = form.face_image_url === m.url;
+                                            return (
+                                                <div
+                                                    key={m.id}
+                                                    onClick={() => setField('face_image_url', m.url)}
+                                                    className={`cursor-pointer rounded-xl border p-2 flex items-center gap-3 transition-all ${isSelected ? 'bg-yellow-400/15 border-yellow-400' : 'bg-stone-950 border-white/10 hover:border-white/30'}`}
+                                                >
+                                                    <img src={m.url} alt={m.name} className="w-12 h-12 rounded-lg object-cover" />
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-xs font-bold text-stone-200 truncate">{m.name}</p>
+                                                        <p className="text-[10px] text-emerald-400">{isSelected ? '✓ Selected Model' : 'Click to Select'}</p>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Model Photo Input (Custom or Override) */}
+                            <div className="space-y-1.5">
+                                <p className="text-xs font-bold text-stone-200">{suitCategory === 'custom' ? 'Model ki Photo Upload Karein' : 'Selected Model Photo (Ya replace karein)'}</p>
+                                <div className="grid gap-2 sm:grid-cols-[1fr_auto] items-center">
+                                    <input value={form.face_image_url} onChange={e => setField('face_image_url', e.target.value)} placeholder="Model photo ka link ya upload karein" className="h-10 bg-stone-950 border border-white/10 rounded-xl px-3 text-xs font-mono" />
+                                    <label className="h-10 px-3 flex items-center gap-1.5 bg-stone-800 hover:bg-stone-700 border border-white/10 rounded-xl text-xs font-bold cursor-pointer transition-colors">
+                                        <Upload className="w-3.5 h-3.5" /> Upload Model
+                                        <input type="file" accept="image/*" className="hidden" onChange={e => pickFile(e, 'face_image_url')} />
+                                    </label>
+                                </div>
+                                {form.face_image_url && <img src={form.face_image_url} alt="Model" className="h-24 rounded-xl object-cover border border-white/10" />}
+                            </div>
+
+                            {/* 2. Suit / Garment Upload Area */}
+                            <div className="space-y-1.5 p-3.5 rounded-2xl bg-stone-950 border border-yellow-400/30">
+                                <p className="text-xs font-bold text-yellow-300 flex items-center gap-1.5">
+                                    <span>👔</span> 2. Aapke Suit / Outfit ki Photo (Zaroori)
+                                </p>
+                                <p className="text-[11px] text-stone-400">Shop ke suit, blazer, kurti, coat-pant ya dress ki saaf photo upload karein:</p>
+                                <div className="grid gap-2 sm:grid-cols-[1fr_auto] items-center pt-1">
+                                    <input value={form.style_image_url} onChange={e => setField('style_image_url', e.target.value)} placeholder="Suit photo link ya upload karein" className="h-10 bg-stone-900 border border-white/10 rounded-xl px-3 text-xs font-mono" />
+                                    <label className="h-10 px-4 flex items-center gap-1.5 bg-yellow-400 hover:bg-yellow-300 text-stone-950 font-bold rounded-xl text-xs cursor-pointer transition-colors">
+                                        <Upload className="w-3.5 h-3.5" /> Suit Upload Karein
+                                        <input type="file" accept="image/*" className="hidden" onChange={e => pickFile(e, 'style_image_url')} />
+                                    </label>
+                                </div>
+                                {form.style_image_url && (
+                                    <div className="pt-2 flex items-center gap-3">
+                                        <img src={form.style_image_url} alt="Suit Preview" className="h-28 rounded-xl object-cover border border-yellow-400/40 shadow-md" />
+                                        <span className="text-xs text-emerald-300 font-semibold">✓ Suit photo uploaded</span>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* 3. Pose & Angle Selection */}
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <p className="text-xs font-bold text-stone-200">3. Photoshoot Poses Chunein</p>
+                                    <span className="text-[11px] text-yellow-300 font-mono">
+                                        {suitSelectedPose === 'all' ? '6 Photos (Batch)' : '1 Photo (Single Pose)'}
+                                    </span>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    {SUIT_POSES.map(p => {
+                                        const isAct = suitSelectedPose === p.id;
+                                        return (
+                                            <button
+                                                key={p.id}
+                                                type="button"
+                                                onClick={() => {
+                                                    setSuitSelectedPose(p.id);
+                                                    setField('batch_count', p.batch);
+                                                }}
+                                                className={`p-2.5 rounded-xl border text-left transition-all ${isAct ? 'bg-yellow-400/15 border-yellow-400 text-yellow-300' : 'bg-stone-950 border-white/10 text-stone-300 hover:border-white/20'}`}
+                                            >
+                                                <p className="text-xs font-bold flex items-center justify-between">
+                                                    <span>{p.label}</span>
+                                                    {isAct && <span className="text-[10px] bg-yellow-400 text-stone-950 px-1.5 py-0.5 rounded font-bold">Selected</span>}
+                                                </p>
+                                                <p className="text-[10px] text-stone-400 mt-0.5">{p.desc}</p>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
                         </div>
-                    ))}
+                    ) : form.task_type === 'combo_5pose_studio' ? (
+                        <div className="space-y-4 pt-1">
+                            {/* Banner */}
+                            <div className="bg-gradient-to-r from-emerald-500/20 via-teal-500/10 to-stone-900 border border-emerald-400/30 rounded-2xl p-4 space-y-1">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xl">📸</span>
+                                    <h3 className="text-sm font-extrabold text-emerald-300">5-Pose Combo Catalog Studio</h3>
+                                </div>
+                                <p className="text-[11px] text-stone-300">
+                                    Photo upload karein aur 5 alag-alag commercial poses payein: Front view, Back view, Side view, Close-up macro detail, aur Upper body portrait.
+                                </p>
+                            </div>
+
+                            {/* Person / Model Photo Input */}
+                            <div className="space-y-1.5">
+                                <p className="text-xs font-bold text-stone-200">1. Person / Model ki Photo (Zaroori)</p>
+                                <div className="grid gap-2 sm:grid-cols-[1fr_auto] items-center">
+                                    <input value={form.face_image_url} onChange={e => setField('face_image_url', e.target.value)} placeholder="Model / Person photo ka link ya upload karein" className="h-10 bg-stone-950 border border-white/10 rounded-xl px-3 text-xs font-mono" />
+                                    <label className="h-10 px-3 flex items-center gap-1.5 bg-stone-800 hover:bg-stone-700 border border-white/10 rounded-xl text-xs font-bold cursor-pointer transition-colors">
+                                        <Upload className="w-3.5 h-3.5" /> Upload Photo
+                                        <input type="file" accept="image/*" className="hidden" onChange={e => pickFile(e, 'face_image_url')} />
+                                    </label>
+                                </div>
+                                {form.face_image_url && <img src={form.face_image_url} alt="Model" className="h-24 rounded-xl object-cover border border-white/10" />}
+                            </div>
+
+                            {/* Outfit Photo (Optional) */}
+                            <div className="space-y-1.5">
+                                <p className="text-xs font-bold text-stone-200">2. Outfit / Suit ki Photo (Optional - naye kapde pehnane ke liye)</p>
+                                <div className="grid gap-2 sm:grid-cols-[1fr_auto] items-center">
+                                    <input value={form.style_image_url} onChange={e => setField('style_image_url', e.target.value)} placeholder="Outfit photo ka link ya upload karein (khali chhod sakte hain)" className="h-10 bg-stone-950 border border-white/10 rounded-xl px-3 text-xs font-mono" />
+                                    <label className="h-10 px-3 flex items-center gap-1.5 bg-stone-800 hover:bg-stone-700 border border-white/10 rounded-xl text-xs font-bold cursor-pointer transition-colors">
+                                        <Upload className="w-3.5 h-3.5" /> Upload Outfit
+                                        <input type="file" accept="image/*" className="hidden" onChange={e => pickFile(e, 'style_image_url')} />
+                                    </label>
+                                </div>
+                                {form.style_image_url && <img src={form.style_image_url} alt="Outfit" className="h-24 rounded-xl object-cover border border-white/10" />}
+                            </div>
+
+                            {/* Pose Selection */}
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <p className="text-xs font-bold text-stone-200">3. Pose Mode Chunein</p>
+                                    <span className="text-[11px] text-emerald-300 font-mono">
+                                        {comboSelectedPose === 'all' ? '5 Photos (Complete Set)' : '1 Photo (Single Pose)'}
+                                    </span>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    {COMBO_5_POSES.map(p => {
+                                        const isAct = comboSelectedPose === p.id;
+                                        return (
+                                            <button
+                                                key={p.id}
+                                                type="button"
+                                                onClick={() => {
+                                                    setComboSelectedPose(p.id);
+                                                    setField('batch_count', p.batch);
+                                                }}
+                                                className={`p-2.5 rounded-xl border text-left transition-all ${isAct ? 'bg-emerald-500/15 border-emerald-400 text-emerald-300' : 'bg-stone-950 border-white/10 text-stone-300 hover:border-white/20'}`}
+                                            >
+                                                <p className="text-xs font-bold flex items-center justify-between">
+                                                    <span>{p.label}</span>
+                                                    {isAct && <span className="text-[10px] bg-emerald-400 text-stone-950 px-1.5 py-0.5 rounded font-bold">Selected</span>}
+                                                </p>
+                                                <p className="text-[10px] text-stone-400 mt-0.5">{p.desc}</p>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        kind.inputs.map(key => kind.edit && key === 'style' ? (
+                            <MaskBlock key={key} label={labelFor(kind, key)} photoUrl={form.face_image_url} maskUrl={form.style_image_url} onSave={saveMask} />
+                        ) : (
+                            <div key={key} className="space-y-1.5">
+                                <p className="text-xs font-bold text-stone-200">{labelFor(kind, key)}{kind.optional?.includes(key) ? ' (optional)' : ''}</p>
+                                <div className="grid gap-2 sm:grid-cols-[1fr_auto] items-center">
+                                    <input value={form[INPUT_COLUMN[key]]} onChange={e => setField(INPUT_COLUMN[key], e.target.value)} placeholder="Photo ka link (ya upload karo)" className="h-10 bg-stone-950 border border-white/10 rounded-xl px-3 text-xs" />
+                                    <label className="h-10 px-3 flex items-center gap-1.5 bg-stone-800 border border-white/10 rounded-xl text-xs font-bold cursor-pointer">
+                                        <Upload className="w-3.5 h-3.5" /> Upload
+                                        <input type="file" accept="image/*" className="hidden" onChange={e => pickFile(e, INPUT_COLUMN[key])} />
+                                    </label>
+                                </div>
+                                {form[INPUT_COLUMN[key]] && <img src={form[INPUT_COLUMN[key]]} alt="" className="h-24 rounded-xl object-cover border border-white/10" />}
+                            </div>
+                        ))
+                    )}
 
                     {kind.family && (
                         <div className="space-y-2">
@@ -634,7 +1201,23 @@ export default function AiStudioCustomer() {
                                     {t.prompt && <p className="text-[11px] text-stone-400 line-clamp-2">{t.prompt}</p>}
                                     {t.status === 'failed' && <p className="text-[11px] text-rose-300">Kuch galat ho gaya. Dobara koshish karo ya prompt badlo.</p>}
                                     {/* Before / after: the photo you sent next to the first result */}
-                                    {photos.length > 0 && (t.face_image_url || t.input_image_url) && (
+                                    {t.task_type === 'suit_studio' && (t.face_image_url || t.style_image_url) && (
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {t.style_image_url && (
+                                                <div className="space-y-1">
+                                                    <p className="text-[10px] text-yellow-300 font-bold">👔 Suit Photo</p>
+                                                    <img src={t.style_image_url} alt="Suit" loading="lazy" className="w-full aspect-[4/5] object-cover rounded-xl border border-yellow-400/20" />
+                                                </div>
+                                            )}
+                                            {t.face_image_url && (
+                                                <div className="space-y-1">
+                                                    <p className="text-[10px] text-stone-300 font-bold">👤 Model Photo</p>
+                                                    <img src={t.face_image_url} alt="Model" loading="lazy" className="w-full aspect-[4/5] object-cover rounded-xl border border-white/10" />
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                    {t.task_type !== 'suit_studio' && photos.length > 0 && (t.face_image_url || t.input_image_url) && (
                                         <div className="grid grid-cols-2 gap-2">
                                             <div className="space-y-1">
                                                 <p className="text-[10px] text-stone-400">Pehle</p>
