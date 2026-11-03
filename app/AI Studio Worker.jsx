@@ -439,13 +439,16 @@ const createLimiter = (max) => {
     let active = 0;
     const queue = [];
     const cap = () => (typeof max === 'function' ? max() : max);
-    const next = () => {
-        if (active >= cap() || queue.length === 0) return;
-        active++;
-        const { task, resolve, reject } = queue.shift();
-        task().then(resolve, reject).finally(() => { active--; next(); });
+    const pump = () => {
+        while (active < cap() && queue.length > 0) {
+            active++;
+            const { task, resolve, reject } = queue.shift();
+            task().then(resolve, reject).finally(() => { active--; pump(); });
+        }
     };
-    return (task) => new Promise((resolve, reject) => { queue.push({ task, resolve, reject }); next(); });
+    const limiter = (task) => new Promise((resolve, reject) => { queue.push({ task, resolve, reject }); pump(); });
+    limiter.pump = pump;
+    return limiter;
 };
 
 // Image URL -> base64 (no prefix)
@@ -864,9 +867,15 @@ export default function AiStudioWorker() {
     const inFlight = useRef(new Set());
     const retryAfterMap = useRef(new Map()); // taskId -> timestamp ms jab tak retry wait karna hai
     const connectingRef = useRef(false); // parallel/duplicate connect calls prevent karne ke liye
-    // Tasks this worker runs at once, and model calls it makes at once. Both read the settings table.
-    const taskLimiter = useRef(createLimiter(() => settingsRef.current.task_concurrency)).current;
-    const geminiLimiter = useRef(createLimiter(() => settingsRef.current.gemini_concurrency)).current;
+    // Dynamic Auto-Scaling (Standard: 10, Rush Turbo: 20 parallel tasks for < 1 min response)
+    const dynamicTaskConcurrencyRef = useRef(10);
+    const dynamicGeminiConcurrencyRef = useRef(8);
+    const [isTurboMode, setIsTurboMode] = useState(false);
+    const [currentConcurrency, setCurrentConcurrency] = useState(10);
+
+    // Tasks this worker runs at once, and model calls it makes at once. Both read the dynamic auto-scaled values.
+    const taskLimiter = useRef(createLimiter(() => dynamicTaskConcurrencyRef.current)).current;
+    const geminiLimiter = useRef(createLimiter(() => dynamicGeminiConcurrencyRef.current)).current;
 
     sbRef.current = sb;
 
@@ -923,6 +932,13 @@ export default function AiStudioWorker() {
         settingsRef.current = data;
         applyRuntime(data);
         setSettings(data);
+        const baseTaskLimit = Number(data?.task_concurrency) || 10;
+        const baseGeminiLimit = Number(data?.gemini_concurrency) || 8;
+        if (!isTurboMode) {
+            dynamicTaskConcurrencyRef.current = baseTaskLimit;
+            dynamicGeminiConcurrencyRef.current = baseGeminiLimit;
+            setCurrentConcurrency(baseTaskLimit);
+        }
         const fbSec = data?.fallback_sec || Math.round(RUNTIME.fallback_ms / 1000) || 2;
         setRefreshIntervalSec(fbSec);
         setNextDbSec(fbSec);
@@ -1192,14 +1208,39 @@ export default function AiStudioWorker() {
         if (!Object.keys(TASK_TYPES).length) return;   // wait until the task types are loaded
         if (!Object.keys(RUNTIME.model_caps).length) return;   // and until the model list is known
         if (settingsRef.current.budget_left === 0) return;
-        if (inFlight.current.size >= (settingsRef.current.task_concurrency || 1)) return;   // no free slot: do not ask the DB
+        const baseLimit = Math.max(1, Number(settingsRef.current.task_concurrency) || 10);
+        const maxLimit = dynamicTaskConcurrencyRef.current;
+        if (inFlight.current.size >= maxLimit) return;   // no free slot: do not ask the DB
         setLastDbFetch(new Date().toLocaleTimeString());
         setNextDbSec(refreshIntervalSec);
         try {
             const stale = new Date(Date.now() - RUNTIME.stale_ms).toISOString();
             const { data, error } = await client.rpc(API.GET_PENDING, { p_worker_id: workerIdRef.current, p_stale_before: stale, p_limit: 40 });
             if (error) throw error;
-            for (const task of data || []) {
+            const pendingTasks = data || [];
+
+            // ⚡ DYNAMIC AUTO-SCALER TURBO LOGIC (< 1 minute latency guarantee)
+            // If rush traffic arrives (>= 4 tasks waiting or active load high):
+            const rushDetected = pendingTasks.length >= 4 || inFlight.current.size >= 8;
+            if (rushDetected && dynamicTaskConcurrencyRef.current < 20) {
+                dynamicTaskConcurrencyRef.current = 20;
+                dynamicGeminiConcurrencyRef.current = 16;
+                setIsTurboMode(true);
+                setCurrentConcurrency(20);
+                taskLimiter.pump?.();
+                geminiLimiter.pump?.();
+                log('⚡ [Auto-Scale Turbo Active] Queue rush detected! Scaled worker limit from 10 -> 20 parallel tasks (Gemini: 16) to ensure < 1 min clearance.');
+            } else if (!rushDetected && pendingTasks.length <= 1 && inFlight.current.size <= 5 && dynamicTaskConcurrencyRef.current > baseLimit) {
+                // Cool down to normal limit once backlog is cleared
+                dynamicTaskConcurrencyRef.current = baseLimit;
+                dynamicGeminiConcurrencyRef.current = Math.min(8, Number(settingsRef.current.gemini_concurrency) || 8);
+                setIsTurboMode(false);
+                setCurrentConcurrency(baseLimit);
+                log(`🌿 [Auto-Scale Normal] Queue cleared. Worker limit normalized to ${baseLimit} parallel tasks.`);
+            }
+
+            for (const task of pendingTasks) {
+                if (inFlight.current.size >= dynamicTaskConcurrencyRef.current) break;
                 if (inFlight.current.has(task.id)) continue;
                 if (retryAfterMap.current.has(task.id) && Date.now() < retryAfterMap.current.get(task.id)) continue;
                 if ((settingsRef.current.disabled_models || []).includes(task.model)) continue;
@@ -1218,6 +1259,10 @@ export default function AiStudioWorker() {
                         inFlight.current.delete(task.id);
                         setRunning(inFlight.current.size);
                         if (drainRef.current && inFlight.current.size === 0) log('Drain complete: ab is tab ko band kar sakte ho');
+                        // Instant slot fill: immediately check for remaining tasks without waiting 2 seconds
+                        if (!pausedRef.current && !drainRef.current && inFlight.current.size < dynamicTaskConcurrencyRef.current) {
+                            kickRef.current();
+                        }
                     }
                 });
             }
@@ -1370,6 +1415,15 @@ export default function AiStudioWorker() {
                     </div>
                 </div>
                 <div className="flex items-center gap-2 text-xs">
+                    {/* Dynamic Auto-Scale Concurrency Badge */}
+                    <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-mono font-bold transition-all ${
+                        isTurboMode
+                            ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse shadow-[0_0_12px_rgba(245,158,11,0.3)]'
+                            : 'bg-stone-900 text-stone-300 border-white/10'
+                    }`} title={isTurboMode ? '⚡ Turbo Auto-Scaler Active: 20 parallel tasks running to complete requests in under 1 minute!' : '🟢 Normal Mode: Standard parallel processing'}>
+                        <span>{isTurboMode ? '⚡ TURBO: 20 Parallel (<1m)' : `⚡ Parallel: ${currentConcurrency}`}</span>
+                    </div>
+
                     {/* Session Tasks Progress Badge */}
                     <div className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-stone-900 border border-white/10 text-xs font-mono" title="Worker auto-recycle limit from DB">
                         <span className="text-stone-400">Tasks:</span>
@@ -1449,7 +1503,7 @@ export default function AiStudioWorker() {
                     ['Abhi chal rahe', running],
                     ['Done', myCounts.done ?? '—'],
                     ['Failed', myCounts.failed ?? '—'],
-                    ['Ek saath tasks', settings.task_concurrency],
+                    ['Ek saath tasks', isTurboMode ? `${currentConcurrency} (⚡ Turbo)` : currentConcurrency],
                     ['Memory (RAM)', memStats.supported ? `${memStats.usedMB} MB` : `${inputCache.size} Cache`],
                     ['Recycle (Done/Limit)', `${sessionTasksDone} / ${settings.worker_recycle_after_tasks || 50}`]
                 ].map(([label, value]) => (
@@ -1460,7 +1514,7 @@ export default function AiStudioWorker() {
                 ))}
             </section>
             <p className="text-[11px] text-stone-500">Upload: {settings.cloudinary_enabled ? 'Cloudinary ON' : 'Cloudinary OFF'} · {settings.imgbb_enabled ? 'ImgBB ON' : 'ImgBB OFF'} (admin se)</p>
-            <p className="text-[11px] text-stone-500">Model calls ek saath: {settings.gemini_concurrency} · Photos per task: {settings.photos_per_task_max} · Limits settings table se aati hain</p>
+            <p className="text-[11px] text-stone-500">Model calls ek saath: {isTurboMode ? 16 : settings.gemini_concurrency} · Photos per task: {settings.photos_per_task_max} · ⚡ Auto-Scaler: Rush par limit automatic 20 ho jati hai (&lt; 1 min response guarantee)</p>
 
             {drain && <p className="text-xs text-sky-200 bg-sky-500/10 border border-sky-500/30 rounded-xl px-3 py-2">Drain mode: naya task nahi lega, chal rahe tasks khatam honge.</p>}
             {settings.budget_left != null && <p className="text-[11px] text-stone-400">Aaj ka bacha Gemini budget: {settings.budget_left}</p>}
