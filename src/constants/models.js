@@ -10,16 +10,43 @@ export const IMAGE_ASPECTS = [
 
 export let MODEL_CAPS = {};
 
-export const capsOf = (id) => MODEL_CAPS[id] || { kind: 'text', label: '', aspects: [], sizes: [] };
+export function safeArray(val, fallback = []) {
+    if (Array.isArray(val)) return val;
+    if (typeof val === 'string') {
+        const trimmed = val.trim();
+        if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+            try {
+                const parsed = JSON.parse(trimmed);
+                if (Array.isArray(parsed)) return parsed;
+            } catch (e) {
+                // fall through
+            }
+        }
+        if (trimmed) {
+            return trimmed.split(',').map(s => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+        }
+    }
+    return fallback;
+}
+
+export const capsOf = (id) => {
+    const c = MODEL_CAPS[id];
+    if (!c) return { kind: 'text', label: '', aspects: [], sizes: [] };
+    return {
+        ...c,
+        aspects: safeArray(c.aspects),
+        sizes: safeArray(c.sizes)
+    };
+};
 
 export function setModelCaps(rows) {
     MODEL_CAPS = {};
-    (rows || []).filter(r => r.kind).forEach(r => {
+    (rows || []).filter(r => r && r.kind).forEach(r => {
         MODEL_CAPS[r.model_id] = {
             kind: r.kind,
             label: r.label || r.model_id,
-            aspects: r.aspects || [],
-            sizes: r.sizes || []
+            aspects: safeArray(r.aspects),
+            sizes: safeArray(r.sizes)
         };
     });
 }

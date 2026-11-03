@@ -3,6 +3,12 @@ import { InfoTip } from '../common/InfoTip';
 
 export function GenerationSettings({ form, setForm, type, caps, modelOptions }) {
     const isImage = type.output === 'image';
+    const aspects = Array.isArray(caps?.aspects) && caps.aspects.length > 0 
+        ? caps.aspects 
+        : ['1:1', '4:5', '9:16', '16:9'];
+    const sizes = Array.isArray(caps?.sizes) && caps.sizes.length > 0 
+        ? caps.sizes 
+        : ['1K', '2K', '4K'];
 
     return (
         <div className="space-y-4">
@@ -17,7 +23,7 @@ export function GenerationSettings({ form, setForm, type, caps, modelOptions }) 
                     onChange={e => setForm({ ...form, model: e.target.value })}
                     className="h-9 w-full bg-[#080b12] border border-slate-800 rounded-xl px-3 text-xs text-white font-mono focus:outline-none focus:border-amber-400 transition-colors"
                 >
-                    {modelOptions.map(id => (
+                    {(modelOptions || []).map(id => (
                         <option key={id} value={id}>
                             {id} {id === 'gemini-3.1-flash-image-preview' ? '(Recommended • 2K/4K)' : ''}
                         </option>
@@ -35,7 +41,7 @@ export function GenerationSettings({ form, setForm, type, caps, modelOptions }) 
                             <InfoTip text="Controls width-to-height proportion (1:1 Square, 4:5 Portrait, 9:16 Story)." />
                         </label>
                         <div className="flex flex-wrap gap-1">
-                            {(caps?.aspects?.length ? caps.aspects : ['1:1', '4:5', '9:16', '16:9']).slice(0, 5).map(a => (
+                            {aspects.slice(0, 5).map(a => (
                                 <button
                                     key={a}
                                     type="button"
@@ -61,10 +67,10 @@ export function GenerationSettings({ form, setForm, type, caps, modelOptions }) 
                         <select
                             value={form.image_size}
                             onChange={e => setForm({ ...form, image_size: e.target.value })}
-                            disabled={!caps?.sizes?.length}
+                            disabled={!sizes.length}
                             className="h-8 w-full bg-slate-900 border border-slate-800 rounded-lg px-2 text-xs text-slate-200 font-mono disabled:opacity-40 focus:outline-none focus:border-amber-400"
                         >
-                            {(caps?.sizes?.length ? caps.sizes : ['1K', '2K', '4K']).map(s => (
+                            {sizes.map(s => (
                                 <option key={s} value={s}>{s || 'Default'}</option>
                             ))}
                         </select>

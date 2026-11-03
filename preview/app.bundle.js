@@ -24150,6 +24150,8 @@ function InfoTip({ text, className = "" }) {
 // src/components/studio/GenerationSettings.jsx
 function GenerationSettings({ form, setForm, type, caps, modelOptions }) {
   const isImage = type.output === "image";
+  const aspects = Array.isArray(caps?.aspects) && caps.aspects.length > 0 ? caps.aspects : ["1:1", "4:5", "9:16", "16:9"];
+  const sizes = Array.isArray(caps?.sizes) && caps.sizes.length > 0 ? caps.sizes : ["1K", "2K", "4K"];
   return /* @__PURE__ */ import_react3.default.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ import_react3.default.createElement("div", { className: "space-y-1.5" }, /* @__PURE__ */ import_react3.default.createElement("label", { className: "block text-xs font-bold text-slate-200" }, "Engine / Model", /* @__PURE__ */ import_react3.default.createElement(InfoTip, { text: "Choose which Gemini multimodal vision or image generation model processes this task." })), /* @__PURE__ */ import_react3.default.createElement(
     "select",
     {
@@ -24157,8 +24159,8 @@ function GenerationSettings({ form, setForm, type, caps, modelOptions }) {
       onChange: (e) => setForm({ ...form, model: e.target.value }),
       className: "h-9 w-full bg-[#080b12] border border-slate-800 rounded-xl px-3 text-xs text-white font-mono focus:outline-none focus:border-amber-400 transition-colors"
     },
-    modelOptions.map((id) => /* @__PURE__ */ import_react3.default.createElement("option", { key: id, value: id }, id, " ", id === "gemini-3.1-flash-image-preview" ? "(Recommended \u2022 2K/4K)" : ""))
-  )), isImage && /* @__PURE__ */ import_react3.default.createElement("div", { className: "grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1" }, /* @__PURE__ */ import_react3.default.createElement("div", null, /* @__PURE__ */ import_react3.default.createElement("label", { className: "block text-[11px] font-bold text-slate-400 mb-1" }, "Aspect Ratio", /* @__PURE__ */ import_react3.default.createElement(InfoTip, { text: "Controls width-to-height proportion (1:1 Square, 4:5 Portrait, 9:16 Story)." })), /* @__PURE__ */ import_react3.default.createElement("div", { className: "flex flex-wrap gap-1" }, (caps?.aspects?.length ? caps.aspects : ["1:1", "4:5", "9:16", "16:9"]).slice(0, 5).map((a) => /* @__PURE__ */ import_react3.default.createElement(
+    (modelOptions || []).map((id) => /* @__PURE__ */ import_react3.default.createElement("option", { key: id, value: id }, id, " ", id === "gemini-3.1-flash-image-preview" ? "(Recommended \u2022 2K/4K)" : ""))
+  )), isImage && /* @__PURE__ */ import_react3.default.createElement("div", { className: "grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1" }, /* @__PURE__ */ import_react3.default.createElement("div", null, /* @__PURE__ */ import_react3.default.createElement("label", { className: "block text-[11px] font-bold text-slate-400 mb-1" }, "Aspect Ratio", /* @__PURE__ */ import_react3.default.createElement(InfoTip, { text: "Controls width-to-height proportion (1:1 Square, 4:5 Portrait, 9:16 Story)." })), /* @__PURE__ */ import_react3.default.createElement("div", { className: "flex flex-wrap gap-1" }, aspects.slice(0, 5).map((a) => /* @__PURE__ */ import_react3.default.createElement(
     "button",
     {
       key: a,
@@ -24172,10 +24174,10 @@ function GenerationSettings({ form, setForm, type, caps, modelOptions }) {
     {
       value: form.image_size,
       onChange: (e) => setForm({ ...form, image_size: e.target.value }),
-      disabled: !caps?.sizes?.length,
+      disabled: !sizes.length,
       className: "h-8 w-full bg-slate-900 border border-slate-800 rounded-lg px-2 text-xs text-slate-200 font-mono disabled:opacity-40 focus:outline-none focus:border-amber-400"
     },
-    (caps?.sizes?.length ? caps.sizes : ["1K", "2K", "4K"]).map((s) => /* @__PURE__ */ import_react3.default.createElement("option", { key: s, value: s }, s || "Default"))
+    sizes.map((s) => /* @__PURE__ */ import_react3.default.createElement("option", { key: s, value: s }, s || "Default"))
   )), /* @__PURE__ */ import_react3.default.createElement("div", null, /* @__PURE__ */ import_react3.default.createElement("label", { className: "block text-[11px] font-bold text-slate-400 mb-1" }, "Batch Count", /* @__PURE__ */ import_react3.default.createElement(InfoTip, { text: "Number of parallel image variations to generate concurrently (1-4 photos)." })), /* @__PURE__ */ import_react3.default.createElement(
     "input",
     {
@@ -24623,15 +24625,43 @@ function TaskModal({ task, onClose }) {
 
 // src/constants/models.js
 var MODEL_CAPS = {};
-var capsOf = (id) => MODEL_CAPS[id] || { kind: "text", label: "", aspects: [], sizes: [] };
+function safeArray(val, fallback = []) {
+  if (Array.isArray(val))
+    return val;
+  if (typeof val === "string") {
+    const trimmed = val.trim();
+    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed))
+          return parsed;
+      } catch (e) {
+      }
+    }
+    if (trimmed) {
+      return trimmed.split(",").map((s) => s.trim().replace(/^['"]|['"]$/g, "")).filter(Boolean);
+    }
+  }
+  return fallback;
+}
+var capsOf = (id) => {
+  const c = MODEL_CAPS[id];
+  if (!c)
+    return { kind: "text", label: "", aspects: [], sizes: [] };
+  return {
+    ...c,
+    aspects: safeArray(c.aspects),
+    sizes: safeArray(c.sizes)
+  };
+};
 function setModelCaps(rows) {
   MODEL_CAPS = {};
-  (rows || []).filter((r) => r.kind).forEach((r) => {
+  (rows || []).filter((r) => r && r.kind).forEach((r) => {
     MODEL_CAPS[r.model_id] = {
       kind: r.kind,
       label: r.label || r.model_id,
-      aspects: r.aspects || [],
-      sizes: r.sizes || []
+      aspects: safeArray(r.aspects),
+      sizes: safeArray(r.sizes)
     };
   });
 }

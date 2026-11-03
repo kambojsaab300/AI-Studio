@@ -61,7 +61,7 @@ export function AdminProvider({ children }) {
             sb.from(TABLES.CATALOG).select('*').order('sort'),
             sb.from(TABLES.APPS).select('*'),
             sb.from(TABLES.APP_TASKS).select('*'),
-            sb.from(TABLES.FAMILY_ROLES).select('*').order('sort')
+            sb.from(TABLES.FAMILY_ROLES).select('*').order('sort_order')
         ]);
 
         if (cat.data) {
