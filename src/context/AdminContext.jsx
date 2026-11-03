@@ -124,7 +124,7 @@ export function AdminProvider({ children }) {
             }
         });
 
-        // Background server verification of JWT token with is_admin endpoint
+        // Background server verification or cookie-session recovery
         if (initialAuth.session) {
             client.rpc(API.IS_ADMIN).then(({ data, error }) => {
                 if (error || !data) {
@@ -133,6 +133,15 @@ export function AdminProvider({ children }) {
                     setSession(null);
                 } else {
                     setIsAdmin(true);
+                }
+            }).catch(() => {});
+        } else {
+            // Check if user has active HttpOnly Cookie session on server
+            client.auth.getSession().then(({ data }) => {
+                if (data?.session) {
+                    setSession(data.session);
+                    setIsAdmin(data.session.user?.role === 'admin' || data.session.user?.is_admin === true);
+                    setAuthLoading(false);
                 }
             }).catch(() => {});
         }

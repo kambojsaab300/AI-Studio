@@ -23628,7 +23628,7 @@ var ApiQueryBuilder = class {
       headers["Accept"] = "application/vnd.pgrst.object+json";
     }
     try {
-      const res = await fetch(url, { ...options, headers });
+      const res = await fetch(url, { ...options, credentials: "include", headers });
       let countVal = 0;
       const contentRange = res.headers.get("content-range") || res.headers.get("Content-Range");
       if (contentRange) {
@@ -23697,6 +23697,7 @@ function createClient(apiUrl = "https://aistudio.runasp.net", apiKey = "") {
         try {
           const res = await fetch(`${apiUrl}/api/auth/login`, {
             method: "POST",
+            credentials: "include",
             headers: { "Content-Type": "application/json", "Bypass-Tunnel-Reminder": "true" },
             body: JSON.stringify({ email, password })
           });
@@ -23724,6 +23725,7 @@ function createClient(apiUrl = "https://aistudio.runasp.net", apiKey = "") {
         try {
           const res = await fetch(`${apiUrl}/api/auth/signup`, {
             method: "POST",
+            credentials: "include",
             headers: { "Content-Type": "application/json", "Bypass-Tunnel-Reminder": "true" },
             body: JSON.stringify({ email, password })
           });
@@ -23751,12 +23753,42 @@ function createClient(apiUrl = "https://aistudio.runasp.net", apiKey = "") {
           localStorage.removeItem("aistudio_user");
         } catch {
         }
+        try {
+          await fetch(`${apiUrl}/api/auth/logout`, {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" }
+          });
+        } catch {
+        }
         authListeners.forEach((cb) => cb("SIGNED_OUT", null));
         return { error: null };
       },
       async getSession() {
         if (token && currentUser)
           return { data: { session: { access_token: token, user: currentUser } }, error: null };
+        try {
+          const res = await fetch(`${apiUrl}/api/auth/me`, {
+            method: "GET",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" }
+          });
+          if (res.ok) {
+            const me = await res.json();
+            if (me && me.id) {
+              token = me.access_token || token;
+              currentUser = { id: me.id, email: me.email, role: me.role, is_admin: me.is_admin };
+              try {
+                if (token)
+                  localStorage.setItem("aistudio_token", token);
+                localStorage.setItem("aistudio_user", JSON.stringify(currentUser));
+              } catch {
+              }
+              return { data: { session: { access_token: token, user: currentUser } }, error: null };
+            }
+          }
+        } catch {
+        }
         return { data: { session: null }, error: null };
       },
       async getUser() {
@@ -23780,6 +23812,7 @@ function createClient(apiUrl = "https://aistudio.runasp.net", apiKey = "") {
       try {
         const res = await fetch(`${apiUrl}/rest/v1/rpc/${functionName}`, {
           method: "POST",
+          credentials: "include",
           headers: {
             "Content-Type": "application/json",
             "Bypass-Tunnel-Reminder": "true",
@@ -24111,6 +24144,15 @@ function AdminProvider({ children }) {
           setSession(null);
         } else {
           setIsAdmin(true);
+        }
+      }).catch(() => {
+      });
+    } else {
+      client.auth.getSession().then(({ data }) => {
+        if (data?.session) {
+          setSession(data.session);
+          setIsAdmin(data.session.user?.role === "admin" || data.session.user?.is_admin === true);
+          setAuthLoading(false);
         }
       }).catch(() => {
       });
