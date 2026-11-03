@@ -333,20 +333,37 @@ const CLOUDINARY_UPLOAD_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOU
 
 // What a customer can ask for, in plain words
 // What a customer can ask for. The database (ai_studio_task_catalog) gives the list when the app starts.
+function safeCustomerJson(val, fallback) {
+    if (!val) return fallback;
+    if (typeof val === 'object') return val;
+    if (typeof val === 'string') {
+        const trimmed = val.trim();
+        if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
+            try { return JSON.parse(trimmed); } catch (e) { return fallback; }
+        }
+    }
+    return fallback;
+}
+
 const EMPTY_KIND = { label: '', output: 'text', inputs: [], labels: {}, optional: [], extras: false, promptRequired: false, hint: '' };
 function toKind(r) {
+    const inputs = safeCustomerJson(r.inputs, []);
+    const labels = safeCustomerJson(r.customer_labels || r.labels, {});
+    const optional = safeCustomerJson(r.optional, []);
+    const apps = safeCustomerJson(r.apps, []);
+
     return {
         label: r.customer_label || r.label,
         output: r.output,
-        inputs: r.inputs || [],
-        labels: r.customer_labels || r.labels || {},
-        optional: r.optional || [],
+        inputs: Array.isArray(inputs) ? inputs : [],
+        labels: (typeof labels === 'object' && labels !== null) ? labels : {},
+        optional: Array.isArray(optional) ? optional : [],
         extras: !!r.extras,
         family: !!r.family,
         promptRequired: !!r.prompt_required,
         edit: !!r.edit,
         hint: r.hint || '',
-        apps: r.apps || []                          // the apps that show this type
+        apps: Array.isArray(apps) ? apps : []
     };
 }
 function toKinds(rows) {

@@ -4,7 +4,8 @@ import { INPUT_COLUMN, labelFor } from '../../constants/formDefaults';
 import { uploadFile } from '../../api/uploadService';
 
 export function PhotoSlotGrid({ type, form, setForm, onSetMsg }) {
-    if (!type.inputs || type.inputs.length === 0) return null;
+    const inputs = Array.isArray(type?.inputs) ? type.inputs : [];
+    if (inputs.length === 0) return null;
 
     const [uploadingSlot, setUploadingSlot] = useState(null);
 
@@ -36,7 +37,7 @@ export function PhotoSlotGrid({ type, form, setForm, onSetMsg }) {
         <div className="space-y-3">
             <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-slate-200 flex items-center gap-2">
-                    <span>Required Photo References ({type.inputs.length} Slots)</span>
+                    <span>Required Photo References ({inputs.length} Slots)</span>
                     <span className="text-[10px] text-amber-400 bg-amber-400/10 border border-amber-400/20 px-2 py-0.5 rounded-full font-mono">
                         Upload File ya Direct URL
                     </span>
@@ -44,7 +45,7 @@ export function PhotoSlotGrid({ type, form, setForm, onSetMsg }) {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                {type.inputs.map(key => {
+                {inputs.map(key => {
                     const col = INPUT_COLUMN[key];
                     const val = form[col] || '';
                     const isOptional = type.optional?.includes(key);

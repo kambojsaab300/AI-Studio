@@ -28,25 +28,46 @@ export const EMPTY_TYPE = {
 
 export const TASK_TYPES = {};
 
+function safeJson(val, fallback) {
+    if (!val) return fallback;
+    if (typeof val === 'object') return val;
+    if (typeof val === 'string') {
+        const trimmed = val.trim();
+        if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
+            try {
+                return JSON.parse(trimmed);
+            } catch (e) {
+                return fallback;
+            }
+        }
+    }
+    return fallback;
+}
+
 export const typeOf = (k) => TASK_TYPES[k] || EMPTY_TYPE;
 
 export let CUSTOMER_KINDS = [];
 export let FAMILY_ROLES = [];
 
 export function toTaskType(r) {
+    const inputs = safeJson(r.inputs, []);
+    const labels = safeJson(r.labels, {});
+    const optional = safeJson(r.optional, []);
+    const angles = safeJson(r.angles, null);
+
     return {
-        label: r.label,
+        label: r.label || r.task_type,
         output: r.output,
         kind: r.output,
-        inputs: r.inputs || [],
-        labels: r.labels || {},
-        optional: r.optional || [],
+        inputs: Array.isArray(inputs) ? inputs : [],
+        labels: (typeof labels === 'object' && labels !== null) ? labels : {},
+        optional: Array.isArray(optional) ? optional : [],
         extras: !!r.extras,
         promptRequired: !!r.prompt_required,
         family: !!r.family,
         perPhoto: !!r.per_photo,
         faceCheck: !!r.face_check,
-        angles: r.angles || null
+        angles: angles
     };
 }
 

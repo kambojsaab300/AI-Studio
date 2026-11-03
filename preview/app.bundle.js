@@ -24217,23 +24217,44 @@ var EMPTY_TYPE = {
   faceCheck: false
 };
 var TASK_TYPES = {};
+function safeJson(val, fallback) {
+  if (!val)
+    return fallback;
+  if (typeof val === "object")
+    return val;
+  if (typeof val === "string") {
+    const trimmed = val.trim();
+    if (trimmed.startsWith("[") && trimmed.endsWith("]") || trimmed.startsWith("{") && trimmed.endsWith("}")) {
+      try {
+        return JSON.parse(trimmed);
+      } catch (e) {
+        return fallback;
+      }
+    }
+  }
+  return fallback;
+}
 var typeOf = (k) => TASK_TYPES[k] || EMPTY_TYPE;
 var CUSTOMER_KINDS = [];
 var FAMILY_ROLES = [];
 function toTaskType(r) {
+  const inputs = safeJson(r.inputs, []);
+  const labels = safeJson(r.labels, {});
+  const optional = safeJson(r.optional, []);
+  const angles = safeJson(r.angles, null);
   return {
-    label: r.label,
+    label: r.label || r.task_type,
     output: r.output,
     kind: r.output,
-    inputs: r.inputs || [],
-    labels: r.labels || {},
-    optional: r.optional || [],
+    inputs: Array.isArray(inputs) ? inputs : [],
+    labels: typeof labels === "object" && labels !== null ? labels : {},
+    optional: Array.isArray(optional) ? optional : [],
     extras: !!r.extras,
     promptRequired: !!r.prompt_required,
     family: !!r.family,
     perPhoto: !!r.per_photo,
     faceCheck: !!r.face_check,
-    angles: r.angles || null
+    angles
   };
 }
 function setTaskTypes(rows) {
@@ -24324,7 +24345,8 @@ async function uploadFile(file) {
 
 // src/components/studio/PhotoSlotGrid.jsx
 function PhotoSlotGrid({ type, form, setForm, onSetMsg }) {
-  if (!type.inputs || type.inputs.length === 0)
+  const inputs = Array.isArray(type?.inputs) ? type.inputs : [];
+  if (inputs.length === 0)
     return null;
   const [uploadingSlot, setUploadingSlot] = (0, import_react4.useState)(null);
   const handleFileUpload = async (e, col) => {
@@ -24352,7 +24374,7 @@ function PhotoSlotGrid({ type, form, setForm, onSetMsg }) {
   const handleClear = (col) => {
     setForm((prev) => ({ ...prev, [col]: "" }));
   };
-  return /* @__PURE__ */ import_react4.default.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ import_react4.default.createElement("div", { className: "flex items-center justify-between" }, /* @__PURE__ */ import_react4.default.createElement("label", { className: "text-xs font-bold text-slate-200 flex items-center gap-2" }, /* @__PURE__ */ import_react4.default.createElement("span", null, "Required Photo References (", type.inputs.length, " Slots)"), /* @__PURE__ */ import_react4.default.createElement("span", { className: "text-[10px] text-amber-400 bg-amber-400/10 border border-amber-400/20 px-2 py-0.5 rounded-full font-mono" }, "Upload File ya Direct URL"))), /* @__PURE__ */ import_react4.default.createElement("div", { className: "grid grid-cols-1 sm:grid-cols-2 gap-3.5" }, type.inputs.map((key) => {
+  return /* @__PURE__ */ import_react4.default.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ import_react4.default.createElement("div", { className: "flex items-center justify-between" }, /* @__PURE__ */ import_react4.default.createElement("label", { className: "text-xs font-bold text-slate-200 flex items-center gap-2" }, /* @__PURE__ */ import_react4.default.createElement("span", null, "Required Photo References (", inputs.length, " Slots)"), /* @__PURE__ */ import_react4.default.createElement("span", { className: "text-[10px] text-amber-400 bg-amber-400/10 border border-amber-400/20 px-2 py-0.5 rounded-full font-mono" }, "Upload File ya Direct URL"))), /* @__PURE__ */ import_react4.default.createElement("div", { className: "grid grid-cols-1 sm:grid-cols-2 gap-3.5" }, inputs.map((key) => {
     const col = INPUT_COLUMN[key];
     const val = form[col] || "";
     const isOptional = type.optional?.includes(key);
