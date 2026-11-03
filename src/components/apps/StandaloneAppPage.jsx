@@ -271,6 +271,14 @@ export function StandaloneAppPage({ defaultAppId }) {
                             <span>API & SDK ⚡</span>
                         </button>
                         <a
+                            href={`/customer?app=${appId}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="h-8 px-3 rounded-xl bg-amber-400/10 hover:bg-amber-400/20 text-amber-300 hover:text-amber-200 text-xs font-bold flex items-center gap-1.5 border border-amber-400/30 transition-colors"
+                        >
+                            <span>Customer Portal ↗</span>
+                        </a>
+                        <a
                             href="/admin"
                             className="h-8 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white text-xs font-bold flex items-center gap-1.5 border border-slate-800 transition-colors"
                         >

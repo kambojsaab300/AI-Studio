@@ -593,7 +593,29 @@ export default function AiStudioCustomer() {
     const [familyRoles, setFamilyRoles] = useState([]);   // the family photo slots, from the database
     const [models, setModels] = useState([]);             // the AI models, from the database
     const [apps, setApps] = useState([]);                 // the apps (WearGen, PPP ...), from the database
-    const [appId, setAppId] = useState('weargen');        // the app the customer is working in
+    const [appId, setAppId] = useState(() => {
+        try {
+            const params = new URLSearchParams(window.location.search);
+            const qApp = params.get('app');
+            if (qApp) return qApp.toLowerCase();
+            const match = window.location.pathname.match(/\/(customer|app)\/([a-zA-Z0-9_-]+)/);
+            if (match && match[2] && match[2] !== 'customer') return match[2].toLowerCase();
+            const stored = localStorage.getItem('ai_studio_customer_app_id');
+            if (stored) return stored;
+        } catch {}
+        return 'weargen';
+    });
+
+    const handleAppChange = (newAppId) => {
+        setAppId(newAppId);
+        try {
+            localStorage.setItem('ai_studio_customer_app_id', newAppId);
+            const url = new URL(window.location.href);
+            url.searchParams.set('app', newAppId);
+            window.history.replaceState({}, '', url.toString());
+        } catch {}
+    };
+
     const [suitCategory, setSuitCategory] = useState('man');  // 'man' | 'woman' | 'kids' | 'custom'
     const [suitSelectedPose, setSuitSelectedPose] = useState('all'); // 'all' | 'front' | 'back' | 'side' | 'close' | 'upper' | 'down'
     const [comboSelectedPose, setComboSelectedPose] = useState('all'); // 'all' | 'front' | 'back' | 'side' | 'close' | 'upper'
@@ -651,10 +673,21 @@ export default function AiStudioCustomer() {
             setAppId(id => (data.some(a => a.app_id === id) ? id : data[0].app_id));
         });
     }, [sb]);
-    const shownKinds = useMemo(
-        () => Object.fromEntries(Object.entries(kinds).filter(([, k]) => k.apps.includes(appId))),
-        [kinds, appId]
-    );
+    const shownKinds = useMemo(() => {
+        const currentApp = apps.find(a => a.app_id === appId);
+        const appTaskTypes = currentApp?.task_types || [];
+        return Object.fromEntries(
+            Object.entries(kinds).filter(([taskType, k]) => {
+                if (appTaskTypes.length > 0) {
+                    return appTaskTypes.includes(taskType);
+                }
+                if (k.apps && k.apps.length > 0) {
+                    return k.apps.includes(appId);
+                }
+                return true;
+            })
+        );
+    }, [kinds, appId, apps]);
     // When the app changes, the form moves to the first feature of that app
     useEffect(() => {
         if (shownKinds[form.task_type]) return;
@@ -719,17 +752,23 @@ export default function AiStudioCustomer() {
 
     const signOut = async () => { await sb.auth.signOut(); setMyTasks([]); };
 
-    // ── My tasks (RLS returns only this customer's rows) ──
+    // ── My tasks (Strict RLS & app_id returns only this customer's rows for this app) ──
     const loadMine = useCallback(async () => {
         if (!sb || !session) return;
-        const { data, error } = await sb.from(TABLES.TASKS)
-            .select('id, app_id, task_type, prompt, status, error, output_text, output_image_url, output_image_urls, face_match_score, batch_count, conversation_id, created_at, face_image_url, input_image_url, style_image_url')
+        const currentUserId = session?.user?.id || session?.user?.email;
+        let query = sb.from(TABLES.TASKS)
+            .select('id, app_id, user_id, task_type, prompt, status, error, output_text, output_image_url, output_image_urls, face_match_score, batch_count, conversation_id, created_at, face_image_url, input_image_url, style_image_url')
+            .eq('app_id', appId);
+        if (currentUserId) {
+            query = query.eq('user_id', currentUserId);
+        }
+        const { data, error } = await query
             .order('id', { ascending: false })
             .limit(50);
         if (!error) setMyTasks(data || []);
         const { data: s } = await sb.from(TABLES.SETTINGS).select('maintenance_on, maintenance_message').eq('id', 1).single();
         setMaint(s?.maintenance_on ? s.maintenance_message : null);
-    }, [sb, session]);
+    }, [sb, session, appId]);
 
     useEffect(() => {
         if (!sb || !session) return;
@@ -828,8 +867,10 @@ export default function AiStudioCustomer() {
             }
         }
 
+        const currentUserId = session?.user?.id || session?.user?.email || ('customer_' + appId);
         const row = {
             app_id: appId,
+            user_id: currentUserId,
             task_type: form.task_type,
             model: isImage ? imageModel : textModel,
             prompt: taskPrompt,
@@ -888,18 +929,52 @@ export default function AiStudioCustomer() {
 
     return (
         <div className="min-h-screen bg-stone-950 text-stone-100 p-4 sm:p-6 space-y-5">
-            <header className="flex flex-wrap items-center justify-between gap-3">
+            <header className="flex flex-wrap items-center justify-between gap-3 bg-stone-900/60 border border-white/10 rounded-2xl p-4">
                 <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-yellow-400 flex items-center justify-center"><Sparkles className="w-5 h-5 text-stone-950" /></div>
+                    <div className="w-10 h-10 rounded-xl bg-yellow-400 flex items-center justify-center shadow-lg shadow-yellow-400/20">
+                        <Sparkles className="w-5 h-5 text-stone-950" />
+                    </div>
                     <div>
-                        <h1 className="text-lg font-extrabold">AI Studio</h1>
-                        <p className="text-[11px] text-stone-400">{session.user.email}</p>
+                        <div className="flex items-center gap-2">
+                            <h1 className="text-base sm:text-lg font-black text-white">
+                                {apps.find(a => a.app_id === appId)?.label || appId} Studio
+                            </h1>
+                            <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-full bg-yellow-400/10 text-yellow-300 border border-yellow-400/30">
+                                {appId}
+                            </span>
+                        </div>
+                        <p className="text-[11px] text-stone-400">{session.user.email || 'Customer Account'}</p>
                     </div>
                 </div>
+
+                {/* App Selector if multiple apps exist */}
+                {apps.length > 1 && (
+                    <div className="flex items-center gap-1.5 p-1 bg-stone-950 border border-white/10 rounded-xl">
+                        <span className="text-[11px] font-bold text-stone-400 px-2">App:</span>
+                        {apps.map(a => {
+                            const isSelected = a.app_id === appId;
+                            return (
+                                <button
+                                    key={a.app_id}
+                                    type="button"
+                                    onClick={() => handleAppChange(a.app_id)}
+                                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                                        isSelected
+                                            ? 'bg-yellow-400 text-stone-950 shadow-md font-black'
+                                            : 'text-stone-300 hover:text-white hover:bg-stone-900'
+                                    }`}
+                                >
+                                    {a.label}
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
+
                 <div className="flex items-center gap-2">
-                    <button onClick={() => setScreen('new')} className={`h-9 px-4 rounded-xl text-xs font-bold border ${screen === 'new' ? 'bg-yellow-400 text-stone-950 border-yellow-300' : 'bg-stone-900 border-white/10 text-stone-300'}`}>Naya kaam</button>
-                    <button onClick={() => setScreen('mine')} className={`h-9 px-4 rounded-xl text-xs font-bold border ${screen === 'mine' ? 'bg-yellow-400 text-stone-950 border-yellow-300' : 'bg-stone-900 border-white/10 text-stone-300'}`}>Mere results</button>
-                    <button onClick={signOut} className="h-9 px-3 rounded-xl text-xs font-bold border border-white/10 bg-stone-900 text-stone-300 flex items-center gap-1.5"><LogOut className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => setScreen('new')} className={`h-9 px-4 rounded-xl text-xs font-bold border transition-colors ${screen === 'new' ? 'bg-yellow-400 text-stone-950 border-yellow-300' : 'bg-stone-900 border-white/10 text-stone-300 hover:text-white'}`}>Naya kaam</button>
+                    <button onClick={() => setScreen('mine')} className={`h-9 px-4 rounded-xl text-xs font-bold border transition-colors ${screen === 'mine' ? 'bg-yellow-400 text-stone-950 border-yellow-300' : 'bg-stone-900 border-white/10 text-stone-300 hover:text-white'}`}>Mere results</button>
+                    <button onClick={signOut} title="Logout" className="h-9 px-3 rounded-xl text-xs font-bold border border-white/10 bg-stone-900 hover:bg-rose-500/20 text-stone-300 hover:text-rose-300 flex items-center gap-1.5 transition-colors"><LogOut className="w-3.5 h-3.5" /></button>
                 </div>
             </header>
 
@@ -908,13 +983,15 @@ export default function AiStudioCustomer() {
 
             {screen === 'new' && (
                 <section className="max-w-2xl bg-stone-900 border border-white/10 rounded-2xl p-5 space-y-4">
-                    <h2 className="text-sm font-extrabold">Kya banwana hai?</h2>
+                    <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                        <div>
+                            <h2 className="text-sm font-extrabold text-white">Kya banwana hai?</h2>
+                            <p className="text-[11px] text-stone-400">
+                                App: <span className="text-yellow-300 font-bold">{apps.find(a => a.app_id === appId)?.label || appId}</span> ({Object.keys(shownKinds).length} tools)
+                            </p>
+                        </div>
+                    </div>
 
-                    {apps.length > 1 && (
-                        <select value={appId} onChange={e => setAppId(e.target.value)} className="h-11 w-full bg-stone-950 border border-white/10 rounded-xl px-3 text-xs">
-                            {apps.map(a => <option key={a.app_id} value={a.app_id}>{a.label}</option>)}
-                        </select>
-                    )}
                     <select value={form.task_type} onChange={e => setForm({ ...EMPTY, task_type: e.target.value })} className="h-11 w-full bg-stone-950 border border-white/10 rounded-xl px-3 text-xs">
                         {Object.entries(shownKinds).map(([k, t]) => <option key={k} value={k}>{t.label}</option>)}
                     </select>
@@ -1203,7 +1280,24 @@ export default function AiStudioCustomer() {
 
             {screen === 'mine' && (
                 <section className="space-y-4">
-                    <h2 className="text-sm font-extrabold">Mere results</h2>
+                    <div className="flex flex-wrap items-center justify-between gap-3 bg-stone-900/40 border border-white/5 rounded-2xl p-4">
+                        <div>
+                            <h2 className="text-sm font-extrabold flex items-center gap-2">
+                                <span>Mere results</span>
+                                <span className="text-xs font-bold text-yellow-300 bg-yellow-400/10 border border-yellow-400/30 px-2.5 py-0.5 rounded-full">
+                                    {apps.find(a => a.app_id === appId)?.label || appId} ({myTasks.length})
+                                </span>
+                            </h2>
+                            <p className="text-[11px] text-stone-400">Sirf aapke is app ke tasks aur generated outputs</p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={loadMine}
+                            className="h-8 px-3 rounded-xl bg-stone-900 hover:bg-stone-800 border border-white/10 text-xs font-bold flex items-center gap-1.5 text-stone-300 transition-colors"
+                        >
+                            <RefreshCw className="w-3.5 h-3.5" /> Refresh Results
+                        </button>
+                    </div>
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                         {myTasks.map(t => {
                             const st = STATUS_TEXT[t.status] || STATUS_TEXT.pending;
