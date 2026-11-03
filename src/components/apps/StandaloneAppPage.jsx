@@ -142,6 +142,7 @@ export function StandaloneAppPage({ defaultAppId }) {
     }, [assignedTools, selectedCat, toolSearch]);
 
     const type = typeOf(form.task_type);
+    const activeTool = catalog.find(c => c.task_type === form.task_type) || { task_type: form.task_type, label: type.label || form.task_type };
     const modelOptions = useMemo(() => {
         return Object.keys(MODEL_CAPS).filter(id => capsOf(id).kind === type.kind);
     }, [type.kind, models]);
@@ -568,7 +569,7 @@ export function StandaloneAppPage({ defaultAppId }) {
                 onClose={() => setApiModalOpen(false)}
                 appId={appId}
                 appLabel={appLabel}
-                selectedTool={activeType}
+                selectedTool={activeTool}
                 samplePayload={row}
             />
         </div>

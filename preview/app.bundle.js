@@ -25490,6 +25490,7 @@ function StandaloneAppPage({ defaultAppId }) {
     });
   }, [assignedTools, selectedCat, toolSearch]);
   const type = typeOf(form.task_type);
+  const activeTool = catalog.find((c) => c.task_type === form.task_type) || { task_type: form.task_type, label: type.label || form.task_type };
   const modelOptions = (0, import_react11.useMemo)(() => {
     return Object.keys(MODEL_CAPS).filter((id) => capsOf(id).kind === type.kind);
   }, [type.kind, models]);
@@ -25707,7 +25708,7 @@ function StandaloneAppPage({ defaultAppId }) {
       onClose: () => setApiModalOpen(false),
       appId,
       appLabel,
-      selectedTool: activeType,
+      selectedTool: activeTool,
       samplePayload: row
     }
   ));
@@ -25715,7 +25716,34 @@ function StandaloneAppPage({ defaultAppId }) {
 var StandaloneAppPage_default = StandaloneAppPage;
 
 // preview/app-main.jsx
-(0, import_client2.createRoot)(document.getElementById("root")).render(/* @__PURE__ */ import_react12.default.createElement(StandaloneAppPage_default, null));
+var ErrorBoundary = class extends import_react12.default.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error("App render error:", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return /* @__PURE__ */ import_react12.default.createElement("div", { style: { padding: "2rem", color: "#f87171", background: "#07080d", minHeight: "100vh", fontFamily: "monospace" } }, /* @__PURE__ */ import_react12.default.createElement("h2", { style: { fontSize: "1.25rem", fontWeight: "bold", color: "#fbbf24", marginBottom: "1rem" } }, "AI Studio App Workspace Error"), /* @__PURE__ */ import_react12.default.createElement("pre", { style: { background: "#0f172a", padding: "1rem", borderRadius: "8px", overflow: "auto" } }, this.state.error?.toString()), /* @__PURE__ */ import_react12.default.createElement(
+        "button",
+        {
+          onClick: () => window.location.reload(),
+          style: { padding: "10px 20px", background: "#fbbf24", color: "#000", border: "none", borderRadius: "8px", cursor: "pointer", marginTop: "1.5rem", fontWeight: "bold" }
+        },
+        "Reload Workspace"
+      ));
+    }
+    return this.props.children;
+  }
+};
+(0, import_client2.createRoot)(document.getElementById("root")).render(
+  /* @__PURE__ */ import_react12.default.createElement(ErrorBoundary, null, /* @__PURE__ */ import_react12.default.createElement(StandaloneAppPage_default, null))
+);
 /*! Bundled license information:
 
 react/cjs/react.development.js:
