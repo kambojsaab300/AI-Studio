@@ -1,6 +1,6 @@
 // ============================================================
 // AI Studio: Standalone .NET Core / PostgREST Client Adapter
-// Translates Supabase-style query chain to standard REST APIs
+// Translates fluent query chain to standard .NET Core Web API REST requests
 // ============================================================
 
 export class ApiQueryBuilder {
